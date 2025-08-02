@@ -398,172 +398,210 @@ def config():
         click.echo(f"Config file size: {size} bytes")
 
 
-if __name__ == "__main__":
-    main()
-
-# CLI Commands
-@click.group(invoke_without_command=True)
-@click.option('--threshold', '-t', type=int, default=DEFAULT_THRESHOLD, 
-              help=f'Lines threshold (default: {DEFAULT_THRESHOLD})')
-@click.option('--name', '-n', help='Set a name for this directory')
-@click.pass_context
-def cli(ctx, threshold, name):
-    """DOH - Directory Oh-no, Handle this!
+@main.command()
+@click.option('--once', is_flag=True, help='Run once and exit (perfect for cron jobs)')
+@click.option('--verbose', '-v', is_flag=True, help='Verbose logging output')
+@click.option('--interval', '-i', default=600, type=int, help='Check interval in seconds (default: 600 = 10 minutes)')
+def daemon(once, verbose, interval):
+    """Monitor all directories and auto-commit when thresholds are exceeded
     
-    Quick command to add current directory to auto-commit monitoring.
-    If directory is already monitored, shows status instead.
+    This daemon checks all monitored directories for changes and automatically
+    commits when the change threshold is exceeded. Perfect for running as a 
+    cron job with --once flag.
+    
+    Examples:
+        doh daemon --once     # Run once (good for cron)
+        doh daemon -v         # Run continuously with verbose output
+        doh daemon --interval 300  # Check every 5 minutes
     """
-    if ctx.invoked_subcommand is None:
-        # Default action: add current directory or show status
-        current_dir = Path.cwd()
-        doh = DohCore()
-        
-        if doh.is_monitored(current_dir):
-            click.echo(f"{Colors.YELLOW}Directory already monitored. Showing current status:{Colors.RESET}")
-            click.echo()
-            ctx.invoke(status)
-        else:
-            # Add directory
-            if doh.add_directory(current_dir, threshold, name or ""):
-                display_name = name or current_dir.name
-                click.echo(f"{Colors.GREEN}✓ Added '{display_name}' to monitoring{Colors.RESET}")
-                click.echo(f"  Path: {current_dir}")
-                click.echo(f"  Threshold: {threshold} lines")
-                click.echo()
-                click.echo("Current status:")
-                ctx.invoke(status)
+    import time
+    import logging
+    import os
+    from datetime import datetime
+    
+    # Set up logging
+    log_dir = doh.config.config_dir / "logs"
+    log_dir.mkdir(exist_ok=True)
+    
+    log_file = log_dir / f"daemon_{datetime.now().strftime('%Y-%m-%d')}.log"
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO if verbose else logging.WARNING,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler() if verbose else logging.NullHandler()
+        ]
+    )
+    
+    logger = logging.getLogger('doh-daemon')
+    
+    def auto_commit_directory(directory: Path, stats: dict, threshold: int, name: str) -> bool:
+        """Perform auto-commit for a directory"""
+        try:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            total_changes = stats['total_changes'] + stats['untracked']
+            
+            commit_msg = f"""DOH Auto-commit: {timestamp}
 
-@cli.command()
-def status():
-    """Show status of current directory"""
-    current_dir = Path.cwd()
-    doh = DohCore()
-    
-    stats = GitStats.get_stats(current_dir)
-    if stats is None:
-        click.echo(f"{Colors.RED}Not a git repository{Colors.RESET}")
-        return
-    
-    # Get config values
-    data = doh.config.load()
-    dir_config = data.get('directories', {}).get(str(current_dir), {})
-    threshold = dir_config.get('threshold', DEFAULT_THRESHOLD)
-    name = dir_config.get('name', '')
-    
-    click.echo(f"{Colors.BLUE}Directory Status: {current_dir}{Colors.RESET}")
-    if name:
-        click.echo(f"{Colors.BLUE}Name: {name}{Colors.RESET}")
-    
-    click.echo(f"Changes: {stats['total_changes']} lines (+{stats['added']}/-{stats['deleted']}) in {stats['files_changed']} files")
-    click.echo(f"Untracked files: {stats['untracked']}")
-    click.echo(f"Threshold: {threshold} lines")
-    
-    # Status assessment
-    if stats['total_changes'] > 0:
-        if stats['total_changes'] >= threshold:
-            click.echo(f"{Colors.YELLOW}⚠️  Status: THRESHOLD EXCEEDED - Auto-commit ready{Colors.RESET}")
-            click.echo(f"   Would trigger: {stats['total_changes']} >= {threshold} lines")
-        else:
-            click.echo(f"{Colors.GREEN}✓ Status: THRESHOLD NOT MET{Colors.RESET}")
-            progress = (stats['total_changes'] * 100) // threshold
-            click.echo(f"   Progress: {stats['total_changes']}/{threshold} lines ({progress}%)")
-    else:
-        click.echo(f"{Colors.GREEN}✓ Status: CLEAN - No changes{Colors.RESET}")
-    
-    # Monitoring status
-    if doh.is_excluded(current_dir):
-        excluded_parent = doh.find_excluded_parent(current_dir)
-        if excluded_parent == current_dir:
-            click.echo(f"{Colors.RED}📍 Directory is EXCLUDED from monitoring{Colors.RESET}")
-        else:
-            click.echo(f"{Colors.RED}📍 Directory is EXCLUDED (parent '{excluded_parent}' is excluded){Colors.RESET}")
-    elif doh.is_monitored(current_dir):
-        click.echo(f"{Colors.GREEN}📍 Directory is being MONITORED{Colors.RESET}")
-    else:
-        click.echo(f"{Colors.YELLOW}📍 Directory NOT monitored (run 'doh' to add){Colors.RESET}")
-
-@cli.command()
-def remove():
-    """Remove current directory from monitoring"""
-    current_dir = Path.cwd()
-    doh = DohCore()
-    
-    if doh.is_monitored(current_dir):
-        if doh.remove_directory(current_dir):
-            click.echo(f"{Colors.GREEN}✓ Removed {current_dir} from monitoring{Colors.RESET}")
-        else:
-            click.echo(f"{Colors.RED}Failed to remove directory{Colors.RESET}")
-    else:
-        click.echo(f"{Colors.YELLOW}Directory is not currently monitored{Colors.RESET}")
-
-@cli.command()
-def commit():
-    """Force commit current changes"""
-    current_dir = Path.cwd()
-    stats = GitStats.get_stats(current_dir)
-    
-    if stats is None:
-        click.echo(f"{Colors.RED}Not a git repository{Colors.RESET}")
-        return
-    
-    if stats['total_changes'] == 0:
-        click.echo(f"{Colors.YELLOW}No changes to commit{Colors.RESET}")
-        return
-    
-    # Get threshold for commit message
-    doh = DohCore()
-    data = doh.config.load()
-    threshold = data.get('directories', {}).get(str(current_dir), {}).get('threshold', DEFAULT_THRESHOLD)
-    
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    commit_msg = f"""Manual doh commit: Snapshot at {timestamp}
-
-Changes detected:
+Changes detected in '{name}':
 - Lines added: {stats['added']}
 - Lines deleted: {stats['deleted']}
 - Total changes: {stats['total_changes']}
 - Files modified: {stats['files_changed']}
 - Untracked files: {stats['untracked']}
 
-Manually triggered (threshold: {threshold} lines)"""
+Threshold exceeded ({total_changes} > {threshold} lines)
+
+This is an automatic commit by DOH monitoring system."""
+            
+            # Stage all changes
+            result = subprocess.run(
+                ['git', '-C', str(directory), 'add', '.'],
+                capture_output=True, check=True
+            )
+            
+            # Check if there's anything to commit
+            result = subprocess.run(
+                ['git', '-C', str(directory), 'diff', '--staged', '--quiet'],
+                capture_output=True, check=False
+            )
+            
+            if result.returncode == 0:
+                # Nothing staged to commit
+                logger.info(f"No changes to commit in {name} ({directory})")
+                return False
+            
+            # Commit changes
+            subprocess.run(
+                ['git', '-C', str(directory), 'commit', '-m', commit_msg],
+                capture_output=True, check=True
+            )
+            
+            logger.info(f"✓ Auto-commit successful in '{name}': +{stats['added']}/-{stats['deleted']} lines across {stats['files_changed']} files")
+            if verbose:
+                click.echo(f"{Colors.GREEN}✓ Auto-committed '{name}': {total_changes} changes{Colors.RESET}")
+            
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to commit changes in '{name}' ({directory}): {e}")
+            if verbose:
+                click.echo(f"{Colors.RED}✗ Failed to commit '{name}': {e}{Colors.RESET}")
+            return False
     
-    click.echo(f"{Colors.BLUE}Committing changes...{Colors.RESET}")
+    def cleanup_old_logs():
+        """Clean up logs older than 30 days"""
+        try:
+            retention_days = 30
+            import time
+            cutoff = time.time() - (retention_days * 24 * 60 * 60)
+            
+            for log_file_path in log_dir.glob("daemon_*.log"):
+                if log_file_path.stat().st_mtime < cutoff:
+                    log_file_path.unlink()
+                    logger.info(f"Cleaned up old log: {log_file_path}")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup old logs: {e}")
+    
+    def monitor_cycle() -> tuple[int, int]:
+        """Run one monitoring cycle, return (processed, committed)"""
+        data = doh.config.load()
+        directories = data.get('directories', {})
+        
+        if not directories:
+            logger.warning("No directories to monitor. Run 'doh add' to add directories.")
+            if verbose:
+                click.echo(f"{Colors.YELLOW}No directories being monitored{Colors.RESET}")
+            return 0, 0
+        
+        processed = 0
+        committed = 0
+        
+        for dir_path, info in directories.items():
+            directory = Path(dir_path)
+            threshold = info.get('threshold', DEFAULT_THRESHOLD)
+            name = info.get('name', directory.name)
+            
+            processed += 1
+            
+            if not directory.exists():
+                logger.warning(f"Directory not found: {name} ({directory})")
+                continue
+            
+            stats = GitStats.get_stats(directory)
+            if stats is None:
+                logger.warning(f"Not a git repository: {name} ({directory})")
+                continue
+            
+            total_changes = stats['total_changes'] + stats['untracked']
+            
+            if total_changes >= threshold:
+                logger.info(f"Threshold exceeded in '{name}': {total_changes} >= {threshold}")
+                if auto_commit_directory(directory, stats, threshold, name):
+                    committed += 1
+            else:
+                logger.debug(f"'{name}': {total_changes} changes (under threshold {threshold})")
+        
+        return processed, committed
+    
+    # Main daemon logic
+    cycle_count = 0
+    
+    logger.info(f"Starting DOH daemon (PID: {os.getpid()})")
+    logger.info(f"Run mode: {'single run' if once else 'continuous'}")
+    logger.info(f"Check interval: {interval} seconds")
+    logger.info(f"Verbose: {verbose}")
+    
+    if verbose:
+        click.echo(f"{Colors.BLUE}DOH Daemon starting...{Colors.RESET}")
+        click.echo(f"Mode: {'Single run' if once else 'Continuous'}")
+        click.echo(f"Interval: {interval} seconds")
+        click.echo()
     
     try:
-        subprocess.run(['git', '-C', str(current_dir), 'add', '.'], check=True)
-        subprocess.run(['git', '-C', str(current_dir), 'commit', '-m', commit_msg], check=True)
-        click.echo(f"{Colors.GREEN}✓ Changes committed successfully{Colors.RESET}")
-    except subprocess.CalledProcessError:
-        click.echo(f"{Colors.RED}✗ Failed to commit changes{Colors.RESET}")
-
-@cli.command()
-def list():
-    """List all monitored directories"""
-    doh = DohCore()
-    data = doh.config.load()
-    directories = data.get('directories', {})
-    
-    click.echo(f"{Colors.BLUE}Monitored directories:{Colors.RESET}")
-    
-    if not directories:
-        click.echo("No directories being monitored")
-        return
-    
-    for dir_path, config in directories.items():
-        path = Path(dir_path)
-        name = config.get('name', '')
-        threshold = config.get('threshold', DEFAULT_THRESHOLD)
-        
-        if path.exists():
-            if name:
-                click.echo(f"  {Colors.GREEN}✓{Colors.RESET} {name}: {dir_path} (threshold: {threshold})")
-            else:
-                click.echo(f"  {Colors.GREEN}✓{Colors.RESET} {dir_path} (threshold: {threshold})")
-        else:
-            if name:
-                click.echo(f"  {Colors.RED}✗{Colors.RESET} {name}: {dir_path} (threshold: {threshold}) - Directory not found")
-            else:
-                click.echo(f"  {Colors.RED}✗{Colors.RESET} {dir_path} (threshold: {threshold}) - Directory not found")
+        while True:
+            cycle_count += 1
+            
+            # Clean up old logs every 10 cycles
+            if cycle_count % 10 == 1:
+                cleanup_old_logs()
+            
+            if verbose:
+                click.echo(f"{Colors.BLUE}Starting monitoring cycle #{cycle_count}...{Colors.RESET}")
+            
+            processed, committed = monitor_cycle()
+            
+            if verbose or committed > 0:
+                status_color = Colors.GREEN if committed > 0 else Colors.YELLOW
+                click.echo(f"{status_color}Cycle #{cycle_count}: {committed}/{processed} directories auto-committed{Colors.RESET}")
+            
+            logger.info(f"Monitoring cycle #{cycle_count} complete: {committed}/{processed} directories auto-committed")
+            
+            # Exit if running once (cron mode)
+            if once:
+                logger.info("Single run complete")
+                if verbose:
+                    click.echo(f"{Colors.GREEN}Single run complete{Colors.RESET}")
+                break
+            
+            # Wait for next cycle
+            if verbose:
+                click.echo(f"Waiting {interval} seconds until next check...")
+                click.echo()
+            
+            time.sleep(interval)
+            
+    except KeyboardInterrupt:
+        logger.info("Daemon stopped by user")
+        if verbose:
+            click.echo(f"\n{Colors.YELLOW}Daemon stopped by user{Colors.RESET}")
+    except Exception as e:
+        logger.error(f"Daemon error: {e}")
+        if verbose:
+            click.echo(f"{Colors.RED}Daemon error: {e}{Colors.RESET}")
+        raise
 
 
 if __name__ == "__main__":
