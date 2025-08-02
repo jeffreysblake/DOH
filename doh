@@ -40,10 +40,9 @@ print_usage() {
     echo ""
     echo "Examples:"
     echo "  doh                # Add current dir or show status if already monitored"
-    echo "  doh 25 -n myproj   # Add current dir with 25-line threshold and name"
+    echo "  doh 25 -n myproj   # Add with threshold and name"
     echo "  doh --status       # Check current directory status"
     echo "  doh ex add         # Exclude current directory from monitoring"
-    echo "  doh ex list        # List all excluded directories"
 }
 
 # Initialize config directory and file
@@ -59,7 +58,8 @@ init_config() {
   "global_settings": {
     "log_retention_days": 30,
     "default_threshold": 50,
-    "check_interval_minutes": 10
+    "check_interval_minutes": 10,
+    "git_profile": ""
   }
 }
 EOF
@@ -113,15 +113,28 @@ update_config() {
         name=$(basename "$dir_path")
     fi
     
+    # Build config entry
+    local config_entry="\"name\": \"$name\", \"threshold\": $threshold, \"added\": \"$timestamp\", \"last_checked\": \"$timestamp\""
+    
     # If directory already exists in config, update it; otherwise add it
     if grep -q "\"$dir_path\":" "$DOH_CONFIG_FILE"; then
         # Update existing entry
-        sed "s|\"$dir_path\": *{[^}]*}|\"$dir_path\": {\"name\": \"$name\", \"threshold\": $threshold, \"added\": \"$timestamp\", \"last_checked\": \"$timestamp\"}|" \
+        sed "s|\"$dir_path\": *{[^}]*}|\"$dir_path\": {$config_entry}|" \
             "$DOH_CONFIG_FILE" > "$temp_file"
     else
-        # Add new entry (insert before the closing brace of directories)
-        sed "/\"directories\": *{/a\\    \"$dir_path\": {\"name\": \"$name\", \"threshold\": $threshold, \"added\": \"$timestamp\", \"last_checked\": \"$timestamp\"}," \
-            "$DOH_CONFIG_FILE" > "$temp_file"
+        # Add new entry - handle both empty and non-empty directories section
+        if grep -q '"directories": *{}' "$DOH_CONFIG_FILE"; then
+            # Empty directories section - replace {} with {entry}
+            sed "s|\"directories\": *{}|\"directories\": {\\n    \"$dir_path\": {$config_entry}\\n  }|" \
+                "$DOH_CONFIG_FILE" > "$temp_file"
+        else
+            # Non-empty directories section - add entry before closing brace
+            sed "/\"directories\": *{/,/}/ {
+                /}/ {
+                    i\\    \"$dir_path\": {$config_entry},
+                }
+            }" "$DOH_CONFIG_FILE" > "$temp_file"
+        fi
     fi
     
     mv "$temp_file" "$DOH_CONFIG_FILE"
@@ -196,8 +209,8 @@ is_monitored() {
         return 1
     fi
     
-    # Check if directory exists in directories section
-    sed -n '/\"directories\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$dir_path\":"
+    # Simple check if directory exists in config
+    grep -q "\"$dir_path\":" "$DOH_CONFIG_FILE"
 }
 
 # Add directory to exclusions
@@ -411,18 +424,26 @@ list_directories() {
         return 0
     fi
     
-    # Extract directory entries from JSON
-    sed -n '/\"directories\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -o '"[^"]*": {[^}]*}' | while read -r line; do
-        local dir_path=$(echo "$line" | sed 's/"\([^"]*\)": {.*/\1/')
-        local threshold=$(echo "$line" | grep -o '"threshold": [0-9]*' | sed 's/"threshold": //')
-        local name=$(echo "$line" | grep -o '"name": "[^"]*"' | sed 's/"name": "\([^"]*\)"/\1/')
+    # Extract directory paths from the config file
+    local found_directories=false
+    while IFS= read -r dir_path; do
+        [[ -z "$dir_path" ]] && continue
+        found_directories=true
+        
+        local threshold=$(get_config_value "threshold" "$dir_path")
+        local name=$(get_config_value "name" "$dir_path")
+        local git_profile=$(get_config_value "git_profile" "$dir_path")
         
         if [[ -d "$dir_path" ]]; then
             if [[ -n "$name" ]]; then
-                echo -e "  ${GREEN}✓${NC} $name: $dir_path (threshold: $threshold)"
+                local display_line="  ${GREEN}✓${NC} $name: $dir_path (threshold: $threshold"
             else
-                echo -e "  ${GREEN}✓${NC} $dir_path (threshold: $threshold)"
+                local display_line="  ${GREEN}✓${NC} $dir_path (threshold: $threshold"
             fi
+            if [[ -n "$git_profile" ]]; then
+                display_line="$display_line, profile: $git_profile"
+            fi
+            echo -e "$display_line)"
         else
             if [[ -n "$name" ]]; then
                 echo -e "  ${RED}✗${NC} $name: $dir_path (threshold: $threshold) - Directory not found"
@@ -430,7 +451,11 @@ list_directories() {
                 echo -e "  ${RED}✗${NC} $dir_path (threshold: $threshold) - Directory not found"
             fi
         fi
-    done
+    done < <(grep -o '"/[^"]*":' "$DOH_CONFIG_FILE" | tr -d '":')
+    
+    if [[ "$found_directories" == false ]]; then
+        echo "No directories being monitored"
+    fi
 }
 
 # Main execution
@@ -440,7 +465,7 @@ main() {
     local action="add"
     local name=""
     
-    # Handle exclusion commands first
+    # Handle exclusion commands
     if [[ "$1" == "ex" ]]; then
         shift
         case "$1" in
@@ -516,12 +541,7 @@ main() {
     # Execute action
     case "$action" in
         "add")
-            if [[ ! -d "$current_dir/.git" ]]; then
-                echo -e "${RED}Current directory is not a git repository${NC}"
-                exit 1
-            fi
-            
-            # If already monitored, show status instead of re-adding
+            # Check if already monitored, show status instead of re-adding
             if is_monitored "$current_dir"; then
                 echo -e "${YELLOW}Directory already monitored. Showing current status:${NC}"
                 echo ""
@@ -538,6 +558,10 @@ main() {
                     echo "  1. Move current directory outside of '$excluded_path'"
                     echo "  2. Remove '$excluded_path' from exclusions: doh ex rm '$excluded_path'"
                 fi
+                exit 1
+            elif [[ ! -d "$current_dir/.git" ]]; then
+                echo -e "${RED}Current directory is not a git repository${NC}"
+                echo "Use 'git init' to initialize a git repository first"
                 exit 1
             else
                 update_config "$current_dir" "$threshold" "$name"
