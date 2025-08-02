@@ -68,12 +68,24 @@ def force_commit_directory(directory: Path) -> bool:
         return False
     
     try:
+        # Get git profile from config if set
+        data = doh.config.load()
+        git_profile = data.get('global_settings', {}).get('git_profile', '')
+        
+        git_cmd = ['git', '-C', str(directory)]
+        
+        # Add git profile config if specified
+        if git_profile:
+            profile_path = Path(git_profile).expanduser()
+            if profile_path.exists():
+                git_cmd.extend(['-c', f'include.path={profile_path}'])
+        
         # Add all changes
-        subprocess.run(['git', '-C', str(directory), 'add', '.'], check=True, capture_output=True)
+        subprocess.run(git_cmd + ['add', '.'], check=True, capture_output=True)
         
         # Check if there's anything to commit
         result = subprocess.run(
-            ['git', '-C', str(directory), 'diff', '--staged', '--quiet'],
+            git_cmd + ['diff', '--staged', '--quiet'],
             capture_output=True, check=False
         )
         
@@ -86,7 +98,7 @@ def force_commit_directory(directory: Path) -> bool:
         commit_msg = f"DOH auto-commit: {timestamp}"
         
         subprocess.run(
-            ['git', '-C', str(directory), 'commit', '-m', commit_msg],
+            git_cmd + ['commit', '-m', commit_msg],
             check=True, capture_output=True
         )
         return True
@@ -97,27 +109,34 @@ def force_commit_directory(directory: Path) -> bool:
 
 @click.group()
 @click.version_option(version="2.0.0", prog_name="doh")
-def main():
+@click.option('--force', '-f', is_flag=True, help='Force commit any changes before adding directory')
+@click.pass_context
+def main(ctx, force):
     """DOH - Directory Oh-no, Handle this!
     
     A smart auto-commit monitoring system for git repositories.
     """
-    pass
+    # Store force flag in context for commands to access
+    ctx.ensure_object(dict)
+    ctx.obj['force'] = force
 
 
 @main.command()
 @click.option('--threshold', '-t', default=DEFAULT_THRESHOLD, type=int,
               help=f'Change threshold (default: {DEFAULT_THRESHOLD})')
 @click.option('--name', '-n', help='Name for this directory (defaults to directory name)')
-@click.option('--force-commit', '-f', is_flag=True, help='Force commit changes if any exist')
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path), 
                 required=False)
-def add(directory, threshold, name, force_commit):
+@click.pass_context
+def add(ctx, directory, threshold, name):
     """Add a directory to monitoring"""
     if directory is None:
         directory = Path.cwd()
     
     directory = directory.resolve()
+    
+    # Get force flag from context
+    force_commit = ctx.obj.get('force', False)
     
     # Smart behavior: if already monitored, show status instead
     if doh.is_monitored(directory):
@@ -392,10 +411,46 @@ def config():
     click.echo(f"Monitored directories: {len(directories)}")
     click.echo(f"Excluded directories: {len(exclusions_dict)}")
     click.echo(f"Default threshold: {settings.get('default_threshold', DEFAULT_THRESHOLD)}")
+    click.echo(f"Git profile: {settings.get('git_profile', 'None')}")
     
     if doh.config.config_file.exists():
         size = doh.config.config_file.stat().st_size
         click.echo(f"Config file size: {size} bytes")
+
+
+@main.command()
+@click.option('--git-profile', help='Path to git config file to use for commits (e.g., ~/.gitconfig-personal)')
+@click.option('--threshold', type=int, help='Set default threshold for new directories')
+def configure(git_profile, threshold):
+    """Configure global DOH settings"""
+    data = doh.config.load()
+    settings = data.setdefault('global_settings', {})
+    
+    changed = False
+    
+    if git_profile is not None:
+        settings['git_profile'] = git_profile
+        changed = True
+        click.echo(f"{Colors.GREEN}✓ Git profile set to: {git_profile}{Colors.RESET}")
+        
+        # Verify the profile exists
+        profile_path = Path(git_profile).expanduser()
+        if not profile_path.exists():
+            click.echo(f"{Colors.YELLOW}⚠ Warning: Git profile file does not exist: {profile_path}{Colors.RESET}")
+    
+    if threshold is not None:
+        settings['default_threshold'] = threshold
+        changed = True
+        click.echo(f"{Colors.GREEN}✓ Default threshold set to: {threshold}{Colors.RESET}")
+    
+    if not changed:
+        click.echo(f"{Colors.YELLOW}No changes specified. Use --help to see available options.{Colors.RESET}")
+        return
+    
+    if doh.config.save(data):
+        click.echo(f"{Colors.GREEN}Configuration saved successfully{Colors.RESET}")
+    else:
+        click.echo(f"{Colors.RED}Failed to save configuration{Colors.RESET}")
 
 
 @main.command()
@@ -456,15 +511,27 @@ Threshold exceeded ({total_changes} > {threshold} lines)
 
 This is an automatic commit by DOH monitoring system."""
             
+            # Get git profile from config if set
+            data = doh.config.load()
+            git_profile = data.get('global_settings', {}).get('git_profile', '')
+            
+            git_cmd = ['git', '-C', str(directory)]
+            
+            # Add git profile config if specified
+            if git_profile:
+                profile_path = Path(git_profile).expanduser()
+                if profile_path.exists():
+                    git_cmd.extend(['-c', f'include.path={profile_path}'])
+            
             # Stage all changes
             result = subprocess.run(
-                ['git', '-C', str(directory), 'add', '.'],
+                git_cmd + ['add', '.'],
                 capture_output=True, check=True
             )
             
             # Check if there's anything to commit
             result = subprocess.run(
-                ['git', '-C', str(directory), 'diff', '--staged', '--quiet'],
+                git_cmd + ['diff', '--staged', '--quiet'],
                 capture_output=True, check=False
             )
             
@@ -475,7 +542,7 @@ This is an automatic commit by DOH monitoring system."""
             
             # Commit changes
             subprocess.run(
-                ['git', '-C', str(directory), 'commit', '-m', commit_msg],
+                git_cmd + ['commit', '-m', commit_msg],
                 capture_output=True, check=True
             )
             
