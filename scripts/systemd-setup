@@ -106,18 +106,29 @@ main() {
         print_warning "Daemon test had issues - check configuration"
     fi
     
+    print_step "Starting and enabling DOH daemon timer"
+    
+    # Start the timer
+    if systemctl start "$TIMER_NAME"; then
+        print_success "Timer started successfully"
+    else
+        print_warning "Failed to start timer - you can start it manually later"
+    fi
+    
+    # Enable the timer to start on boot
+    if systemctl enable "$TIMER_NAME"; then
+        print_success "Timer enabled for automatic startup"
+    else
+        print_warning "Failed to enable timer - you can enable it manually later"
+    fi
+    
     echo
-    echo -e "${GREEN}${BOLD}Systemd service and timer setup complete!${NC}"
+    echo -e "${GREEN}${BOLD}Systemd service and timer setup complete and running!${NC}"
     echo
-    echo "The DOH daemon will run every 10 minutes via systemd timer."
+    echo "The DOH daemon is now running and will monitor every 10 minutes."
+    echo "It will automatically start on system boot."
     echo
     echo "To manage the DOH daemon:"
-    echo
-    echo -e "${BLUE}Start the timer (enables monitoring):${NC}"
-    echo "  sudo systemctl start $TIMER_NAME"
-    echo
-    echo -e "${BLUE}Enable timer to start on boot:${NC}"
-    echo "  sudo systemctl enable $TIMER_NAME"
     echo
     echo -e "${BLUE}Check timer status:${NC}"
     echo "  sudo systemctl status $TIMER_NAME"

@@ -16,23 +16,26 @@ class GitStats:
             return None
         
         try:
-            # Check if there are any changes
-            result = subprocess.run(
-                ['git', '-C', str(directory), 'diff', '--quiet', 'HEAD'],
-                capture_output=True, check=False
-            )
+            # Count untracked files first
+            untracked_count = GitStats._count_untracked(directory)
             
-            if result.returncode == 0:
-                # No changes
+            # Check if HEAD exists (repository has commits)
+            head_exists = subprocess.run(
+                ['git', '-C', str(directory), 'rev-parse', '--verify', 'HEAD'],
+                capture_output=True, check=False
+            ).returncode == 0
+            
+            if not head_exists:
+                # New repository with no commits - only untracked files matter
                 return {
                     'total_changes': 0,
                     'added': 0,
                     'deleted': 0,
                     'files_changed': 0,
-                    'untracked': GitStats._count_untracked(directory)
+                    'untracked': untracked_count
                 }
             
-            # Get detailed stats
+            # Get detailed stats for tracked file changes
             result = subprocess.run(
                 ['git', '-C', str(directory), 'diff', '--numstat', 'HEAD'],
                 capture_output=True, text=True, check=True
@@ -57,7 +60,7 @@ class GitStats:
                 'added': added,
                 'deleted': deleted,
                 'files_changed': files_changed,
-                'untracked': GitStats._count_untracked(directory)
+                'untracked': untracked_count
             }
             
         except subprocess.CalledProcessError:
