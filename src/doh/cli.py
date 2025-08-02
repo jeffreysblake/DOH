@@ -129,14 +129,34 @@ def main(ctx, force, threshold, name):
     if ctx.invoked_subcommand is None:
         directory = Path.cwd().resolve()
         
-        # Smart behavior: if already monitored, show status instead
+        # Smart behavior: if already monitored, check if auto-commit is needed
         if doh.is_monitored(directory):
-            click.echo(f"{Colors.YELLOW}Directory already monitored. Showing current status:{Colors.RESET}")
+            click.echo(f"{Colors.YELLOW}Directory already monitored. Checking status:{Colors.RESET}")
             click.echo()
+            
+            # Get current stats and threshold for this directory
+            data = doh.config.load()
+            directories = data.get('directories', {})
+            dir_info = directories.get(str(directory), {})
+            dir_threshold = dir_info.get('threshold', DEFAULT_THRESHOLD)
+            
+            stats = GitStats.get_stats(directory)
+            if stats:
+                total_changes = stats['total_changes'] + stats['untracked']
+                
+                # Auto-commit if over threshold (even without -f flag)
+                if total_changes >= dir_threshold:
+                    click.echo(f"{Colors.RED}Threshold exceeded ({total_changes}/{dir_threshold}). Auto-committing...{Colors.RESET}")
+                    if force_commit_directory(directory):
+                        click.echo(f"{Colors.GREEN}✓ Changes committed successfully{Colors.RESET}")
+                    else:
+                        click.echo(f"{Colors.YELLOW}⚠ Auto-commit failed or no changes to commit{Colors.RESET}")
+                    click.echo()
+            
             _show_single_directory_status(directory)
             return
         
-        # Handle force commit first if requested
+        # Handle force commit first if requested (for new directories)
         if force:
             if force_commit_directory(directory):
                 click.echo(f"{Colors.GREEN}Changes committed successfully{Colors.RESET}")
