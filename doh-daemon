@@ -245,8 +245,8 @@ get_monitored_directories() {
         return 1
     fi
     
-    # Extract directory paths from JSON
-    grep -o '"[^"]*": {[^}]*}' "$DOH_CONFIG_FILE" | sed 's/"\([^"]*\)": {.*/\1/' | grep -v '^[a-z_]*$'
+    # Extract directory paths from JSON directories section only
+    sed -n '/\"directories\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -o '"[^"]*": {[^}]*}' | sed 's/"\([^"]*\)": {.*/\1/'
 }
 
 # Check configuration validity

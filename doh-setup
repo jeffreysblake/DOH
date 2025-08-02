@@ -54,10 +54,14 @@ EOF
     echo "Run 'source ~/.bashrc' or start a new terminal to use the aliases"
     echo ""
     echo "Available commands:"
-    echo "  doh [threshold]     - Add current directory to monitoring"
+    echo "  doh [threshold]     - Add current directory to monitoring (or show status if already monitored)"
+    echo "  doh --name NAME     - Add with a custom name"
     echo "  doh-status          - Show current directory status"
     echo "  doh-list            - List all monitored directories"
     echo "  doh-commit          - Force commit current changes"
+    echo "  doh ex list         - List excluded directories"
+    echo "  doh ex add [path]   - Exclude directory from monitoring"
+    echo "  doh ex rm [path]    - Remove directory from exclusions"
     echo "  doh-daemon          - Run the monitoring daemon"
 }
 

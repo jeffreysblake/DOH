@@ -22,20 +22,28 @@ print_usage() {
     echo "doh - Directory auto-commit handler"
     echo ""
     echo "Usage: doh [threshold] [options]"
+    echo "       doh ex <command> [path]"
     echo ""
     echo "Options:"
     echo "  threshold          Lines threshold (default: 50)"
+    echo "  --name, -n NAME    Set a name for this directory"
     echo "  --status, -s       Show status of current directory"
     echo "  --remove, -r       Remove current directory from monitoring"
     echo "  --force-commit, -f Force commit if changes exist"
     echo "  --list, -l         List all monitored directories"
     echo "  --help, -h         Show this help"
     echo ""
+    echo "Exclusion commands:"
+    echo "  ex list            List excluded directories"
+    echo "  ex add [path]      Add directory to exclusions (default: pwd)"
+    echo "  ex rm [path]       Remove directory from exclusions (default: pwd)"
+    echo ""
     echo "Examples:"
-    echo "  doh                # Add current dir with 50-line threshold"
-    echo "  doh 25             # Add current dir with 25-line threshold"
+    echo "  doh                # Add current dir or show status if already monitored"
+    echo "  doh 25 -n myproj   # Add current dir with 25-line threshold and name"
     echo "  doh --status       # Check current directory status"
-    echo "  doh --force-commit # Force commit current changes"
+    echo "  doh ex add         # Exclude current directory from monitoring"
+    echo "  doh ex list        # List all excluded directories"
 }
 
 # Initialize config directory and file
@@ -47,6 +55,7 @@ init_config() {
 {
   "version": "1.0",
   "directories": {},
+  "exclusions": {},
   "global_settings": {
     "log_retention_days": 30,
     "default_threshold": 50,
@@ -77,19 +86,32 @@ get_config_value() {
 update_config() {
     local dir_path="$1"
     local threshold="$2"
+    local name="$3"
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    # Check if directory is excluded
+    if is_excluded "$dir_path"; then
+        echo -e "${RED}Directory is excluded from monitoring${NC}"
+        echo "Use 'doh ex rm' to remove from exclusions first"
+        return 1
+    fi
     
     # Create a temporary file with updated config
     local temp_file=$(mktemp)
     
+    # Generate name if not provided
+    if [[ -z "$name" ]]; then
+        name=$(basename "$dir_path")
+    fi
+    
     # If directory already exists in config, update it; otherwise add it
     if grep -q "\"$dir_path\":" "$DOH_CONFIG_FILE"; then
         # Update existing entry
-        sed "s|\"$dir_path\": *{[^}]*}|\"$dir_path\": {\"threshold\": $threshold, \"added\": \"$timestamp\", \"last_checked\": \"$timestamp\"}|" \
+        sed "s|\"$dir_path\": *{[^}]*}|\"$dir_path\": {\"name\": \"$name\", \"threshold\": $threshold, \"added\": \"$timestamp\", \"last_checked\": \"$timestamp\"}|" \
             "$DOH_CONFIG_FILE" > "$temp_file"
     else
         # Add new entry (insert before the closing brace of directories)
-        sed "/\"directories\": *{/a\\    \"$dir_path\": {\"threshold\": $threshold, \"added\": \"$timestamp\", \"last_checked\": \"$timestamp\"}," \
+        sed "/\"directories\": *{/a\\    \"$dir_path\": {\"name\": \"$name\", \"threshold\": $threshold, \"added\": \"$timestamp\", \"last_checked\": \"$timestamp\"}," \
             "$DOH_CONFIG_FILE" > "$temp_file"
     fi
     
@@ -103,6 +125,99 @@ remove_from_config() {
     
     grep -v "\"$dir_path\":" "$DOH_CONFIG_FILE" > "$temp_file"
     mv "$temp_file" "$DOH_CONFIG_FILE"
+}
+
+# Check if directory is excluded
+is_excluded() {
+    local dir_path="$1"
+    
+    if [[ ! -f "$DOH_CONFIG_FILE" ]]; then
+        return 1
+    fi
+    
+    # Check if directory exists in exclusions section
+    sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$dir_path\":"
+}
+
+# Check if directory is monitored
+is_monitored() {
+    local dir_path="$1"
+    
+    if [[ ! -f "$DOH_CONFIG_FILE" ]]; then
+        return 1
+    fi
+    
+    # Check if directory exists in directories section
+    sed -n '/\"directories\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$dir_path\":"
+}
+
+# Add directory to exclusions
+add_exclusion() {
+    local dir_path="$1"
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local temp_file=$(mktemp)
+    
+    # Remove from monitoring if it exists
+    if is_monitored "$dir_path"; then
+        remove_from_config "$dir_path"
+    fi
+    
+    # Add to exclusions
+    if grep -q "\"$dir_path\":" "$DOH_CONFIG_FILE"; then
+        # Update existing entry in exclusions
+        sed "s|\"$dir_path\": *{[^}]*}|\"$dir_path\": {\"excluded\": \"$timestamp\"}|" \
+            "$DOH_CONFIG_FILE" > "$temp_file"
+    else
+        # Add new exclusion entry
+        sed "/\"exclusions\": *{/a\\    \"$dir_path\": {\"excluded\": \"$timestamp\"}," \
+            "$DOH_CONFIG_FILE" > "$temp_file"
+    fi
+    
+    mv "$temp_file" "$DOH_CONFIG_FILE"
+}
+
+# Remove directory from exclusions
+remove_exclusion() {
+    local dir_path="$1"
+    local temp_file=$(mktemp)
+    
+    # Remove from exclusions section
+    sed "/\"exclusions\": *{/,/}/{ /\"$dir_path\":/d; }" "$DOH_CONFIG_FILE" > "$temp_file"
+    mv "$temp_file" "$DOH_CONFIG_FILE"
+}
+
+# List exclusions
+list_exclusions() {
+    echo -e "${BLUE}Excluded directories:${NC}"
+    
+    if [[ ! -f "$DOH_CONFIG_FILE" ]]; then
+        echo "No directories are excluded"
+        return 0
+    fi
+    
+    # Extract exclusion entries from JSON exclusions section only
+    local found_exclusions=false
+    sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -o '"[^"]*": {[^}]*}' | while read -r line; do
+        # Skip if this is just the section header or empty
+        if [[ "$line" =~ ^\"exclusions\": || -z "$line" ]]; then
+            continue
+        fi
+        
+        found_exclusions=true
+        local dir_path=$(echo "$line" | sed 's/"\([^"]*\)": {.*/\1/')
+        local excluded_date=$(echo "$line" | grep -o '"excluded": "[^"]*"' | sed 's/"excluded": "\([^"]*\)"/\1/')
+        
+        if [[ -d "$dir_path" ]]; then
+            echo -e "  ${YELLOW}✗${NC} $dir_path (excluded: $excluded_date)"
+        else
+            echo -e "  ${RED}✗${NC} $dir_path (excluded: $excluded_date) - Directory not found"
+        fi
+    done
+    
+    # Check if no exclusions were found
+    if ! sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q '"[^"]*": {[^}]*}' | grep -v '"exclusions":'; then
+        echo "No directories are excluded"
+    fi
 }
 
 # Get git stats for current directory
@@ -153,28 +268,37 @@ show_status() {
     
     IFS=':' read -r total added deleted files untracked <<< "$stats"
     local threshold=$(get_config_value "threshold" "$current_dir")
+    local name=$(get_config_value "name" "$current_dir")
     threshold=${threshold:-$DEFAULT_THRESHOLD}
     
     echo -e "${BLUE}Directory Status: $current_dir${NC}"
+    if [[ -n "$name" ]]; then
+        echo -e "${BLUE}Name: $name${NC}"
+    fi
     echo "Changes: $total lines (+$added/-$deleted) in $files files"
     echo "Untracked files: $untracked"
     echo "Threshold: $threshold lines"
     
+    # Status assessment
     if [[ "$total" -gt 0 ]]; then
         if [[ "$total" -ge "$threshold" ]]; then
-            echo -e "${YELLOW}⚠️  Threshold exceeded - ready for auto-commit${NC}"
+            echo -e "${YELLOW}⚠️  Status: THRESHOLD EXCEEDED - Auto-commit ready${NC}"
+            echo -e "   Would trigger: $total >= $threshold lines"
         else
-            echo -e "${GREEN}✓ Changes below threshold${NC}"
+            echo -e "${GREEN}✓ Status: THRESHOLD NOT MET${NC}"
+            echo -e "   Progress: $total/$threshold lines ($(( (total * 100) / threshold ))%)"
         fi
     else
-        echo -e "${GREEN}✓ No changes${NC}"
+        echo -e "${GREEN}✓ Status: CLEAN - No changes${NC}"
     fi
     
-    # Check if directory is monitored
-    if grep -q "\"$current_dir\":" "$DOH_CONFIG_FILE" 2>/dev/null; then
-        echo -e "${GREEN}📍 Directory is being monitored${NC}"
+    # Check monitoring status
+    if is_excluded "$current_dir"; then
+        echo -e "${RED}📍 Directory is EXCLUDED from monitoring${NC}"
+    elif is_monitored "$current_dir"; then
+        echo -e "${GREEN}📍 Directory is being MONITORED${NC}"
     else
-        echo -e "${YELLOW}📍 Directory not monitored (run 'doh' to add)${NC}"
+        echo -e "${YELLOW}📍 Directory NOT monitored (run 'doh' to add)${NC}"
     fi
 }
 
@@ -231,14 +355,23 @@ list_directories() {
     fi
     
     # Extract directory entries from JSON
-    grep -o '"[^"]*": {[^}]*}' "$DOH_CONFIG_FILE" | while read -r line; do
+    sed -n '/\"directories\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -o '"[^"]*": {[^}]*}' | while read -r line; do
         local dir_path=$(echo "$line" | sed 's/"\([^"]*\)": {.*/\1/')
         local threshold=$(echo "$line" | grep -o '"threshold": [0-9]*' | sed 's/"threshold": //')
+        local name=$(echo "$line" | grep -o '"name": "[^"]*"' | sed 's/"name": "\([^"]*\)"/\1/')
         
         if [[ -d "$dir_path" ]]; then
-            echo -e "  ${GREEN}✓${NC} $dir_path (threshold: $threshold)"
+            if [[ -n "$name" ]]; then
+                echo -e "  ${GREEN}✓${NC} $name: $dir_path (threshold: $threshold)"
+            else
+                echo -e "  ${GREEN}✓${NC} $dir_path (threshold: $threshold)"
+            fi
         else
-            echo -e "  ${RED}✗${NC} $dir_path (threshold: $threshold) - Directory not found"
+            if [[ -n "$name" ]]; then
+                echo -e "  ${RED}✗${NC} $name: $dir_path (threshold: $threshold) - Directory not found"
+            else
+                echo -e "  ${RED}✗${NC} $dir_path (threshold: $threshold) - Directory not found"
+            fi
         fi
     done
 }
@@ -248,6 +381,38 @@ main() {
     local current_dir=$(pwd)
     local threshold="$DEFAULT_THRESHOLD"
     local action="add"
+    local name=""
+    
+    # Handle exclusion commands first
+    if [[ "$1" == "ex" ]]; then
+        shift
+        case "$1" in
+            "list")
+                init_config
+                list_exclusions
+                exit 0
+                ;;
+            "add")
+                local target_dir="${2:-$current_dir}"
+                init_config
+                add_exclusion "$target_dir"
+                echo -e "${GREEN}✓ Added $target_dir to exclusions${NC}"
+                exit 0
+                ;;
+            "rm"|"remove")
+                local target_dir="${2:-$current_dir}"
+                init_config
+                remove_exclusion "$target_dir"
+                echo -e "${GREEN}✓ Removed $target_dir from exclusions${NC}"
+                exit 0
+                ;;
+            *)
+                echo -e "${RED}Unknown exclusion command: $1${NC}"
+                echo "Use: doh ex list|add|rm [path]"
+                exit 1
+                ;;
+        esac
+    fi
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -272,6 +437,10 @@ main() {
                 action="list"
                 shift
                 ;;
+            -n|--name)
+                name="$2"
+                shift 2
+                ;;
             [0-9]*)
                 threshold="$1"
                 shift
@@ -295,17 +464,36 @@ main() {
                 exit 1
             fi
             
-            update_config "$current_dir" "$threshold"
-            echo -e "${GREEN}✓ Added $current_dir to monitoring (threshold: $threshold lines)${NC}"
-            echo "Run 'doh --status' to check current status"
-            echo "The doh-daemon will monitor this directory automatically"
+            # If already monitored, show status instead of re-adding
+            if is_monitored "$current_dir"; then
+                echo -e "${YELLOW}Directory already monitored. Showing current status:${NC}"
+                echo ""
+                show_status
+            elif is_excluded "$current_dir"; then
+                echo -e "${RED}Directory is excluded from monitoring${NC}"
+                echo "Use 'doh ex rm' to remove from exclusions first"
+                exit 1
+            else
+                update_config "$current_dir" "$threshold" "$name"
+                local display_name="${name:-$(basename "$current_dir")}"
+                echo -e "${GREEN}✓ Added '$display_name' to monitoring${NC}"
+                echo "  Path: $current_dir"
+                echo "  Threshold: $threshold lines"
+                echo ""
+                echo "Current status:"
+                show_status
+            fi
             ;;
         "status")
             show_status
             ;;
         "remove")
-            remove_from_config "$current_dir"
-            echo -e "${GREEN}✓ Removed $current_dir from monitoring${NC}"
+            if is_monitored "$current_dir"; then
+                remove_from_config "$current_dir"
+                echo -e "${GREEN}✓ Removed $current_dir from monitoring${NC}"
+            else
+                echo -e "${YELLOW}Directory is not currently monitored${NC}"
+            fi
             ;;
         "commit")
             force_commit
