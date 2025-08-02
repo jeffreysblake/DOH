@@ -89,10 +89,19 @@ update_config() {
     local name="$3"
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     
-    # Check if directory is excluded
+    # Check if directory or any parent directory is excluded
     if is_excluded "$dir_path"; then
-        echo -e "${RED}Directory is excluded from monitoring${NC}"
-        echo "Use 'doh ex rm' to remove from exclusions first"
+        local excluded_path=$(find_excluded_parent "$dir_path")
+        if [[ "$excluded_path" == "$dir_path" ]]; then
+            echo -e "${RED}Directory is excluded from monitoring${NC}"
+            echo "Use 'doh ex rm' to remove from exclusions first"
+        else
+            echo -e "${RED}Cannot monitor directory - parent directory is excluded${NC}"
+            echo "Parent directory '$excluded_path' is in the exclusions list"
+            echo "Options:"
+            echo "  1. Move current directory outside of '$excluded_path'"
+            echo "  2. Remove '$excluded_path' from exclusions: doh ex rm '$excluded_path'"
+        fi
         return 1
     fi
     
@@ -127,7 +136,7 @@ remove_from_config() {
     mv "$temp_file" "$DOH_CONFIG_FILE"
 }
 
-# Check if directory is excluded
+# Check if directory or any parent directory is excluded
 is_excluded() {
     local dir_path="$1"
     
@@ -135,8 +144,48 @@ is_excluded() {
         return 1
     fi
     
-    # Check if directory exists in exclusions section
-    sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$dir_path\":"
+    # Check if the directory itself is excluded
+    if sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$dir_path\":"; then
+        return 0
+    fi
+    
+    # Check if any parent directory is excluded
+    local current_path="$dir_path"
+    while [[ "$current_path" != "/" && "$current_path" != "." ]]; do
+        current_path=$(dirname "$current_path")
+        if sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$current_path\":"; then
+            return 0
+        fi
+    done
+    
+    return 1
+}
+
+# Find which excluded directory (self or parent) is blocking this path
+find_excluded_parent() {
+    local dir_path="$1"
+    
+    if [[ ! -f "$DOH_CONFIG_FILE" ]]; then
+        return 1
+    fi
+    
+    # Check if the directory itself is excluded
+    if sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$dir_path\":"; then
+        echo "$dir_path"
+        return 0
+    fi
+    
+    # Check if any parent directory is excluded
+    local current_path="$dir_path"
+    while [[ "$current_path" != "/" && "$current_path" != "." ]]; do
+        current_path=$(dirname "$current_path")
+        if sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$current_path\":"; then
+            echo "$current_path"
+            return 0
+        fi
+    done
+    
+    return 1
 }
 
 # Check if directory is monitored
@@ -181,8 +230,11 @@ remove_exclusion() {
     local dir_path="$1"
     local temp_file=$(mktemp)
     
+    # Escape special characters in the path for sed
+    local escaped_path=$(printf '%s' "$dir_path" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    
     # Remove from exclusions section
-    sed "/\"exclusions\": *{/,/}/{ /\"$dir_path\":/d; }" "$DOH_CONFIG_FILE" > "$temp_file"
+    sed "/\"exclusions\": *{/,/}/ { /\"$escaped_path\":/d; }" "$DOH_CONFIG_FILE" > "$temp_file"
     mv "$temp_file" "$DOH_CONFIG_FILE"
 }
 
@@ -294,7 +346,12 @@ show_status() {
     
     # Check monitoring status
     if is_excluded "$current_dir"; then
-        echo -e "${RED}📍 Directory is EXCLUDED from monitoring${NC}"
+        local excluded_path=$(find_excluded_parent "$current_dir")
+        if [[ "$excluded_path" == "$current_dir" ]]; then
+            echo -e "${RED}📍 Directory is EXCLUDED from monitoring${NC}"
+        else
+            echo -e "${RED}📍 Directory is EXCLUDED (parent '$excluded_path' is excluded)${NC}"
+        fi
     elif is_monitored "$current_dir"; then
         echo -e "${GREEN}📍 Directory is being MONITORED${NC}"
     else
@@ -470,8 +527,17 @@ main() {
                 echo ""
                 show_status
             elif is_excluded "$current_dir"; then
-                echo -e "${RED}Directory is excluded from monitoring${NC}"
-                echo "Use 'doh ex rm' to remove from exclusions first"
+                local excluded_path=$(find_excluded_parent "$current_dir")
+                if [[ "$excluded_path" == "$current_dir" ]]; then
+                    echo -e "${RED}Directory is excluded from monitoring${NC}"
+                    echo "Use 'doh ex rm' to remove from exclusions first"
+                else
+                    echo -e "${RED}Cannot monitor directory - parent directory is excluded${NC}"
+                    echo "Parent directory '$excluded_path' is in the exclusions list"
+                    echo "Options:"
+                    echo "  1. Move current directory outside of '$excluded_path'"
+                    echo "  2. Remove '$excluded_path' from exclusions: doh ex rm '$excluded_path'"
+                fi
                 exit 1
             else
                 update_config "$current_dir" "$threshold" "$name"
