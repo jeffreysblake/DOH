@@ -146,7 +146,10 @@ remove_from_config() {
     local temp_file=$(mktemp)
     
     grep -v "\"$dir_path\":" "$DOH_CONFIG_FILE" > "$temp_file"
-    mv "$temp_file" "$DOH_CONFIG_FILE"
+    
+    # Fix trailing commas (simple approach)
+    sed 's/,\s*}/}/g' "$temp_file" > "$DOH_CONFIG_FILE"
+    rm -f "$temp_file"
 }
 
 # Check if directory or any parent directory is excluded
@@ -243,11 +246,8 @@ remove_exclusion() {
     local dir_path="$1"
     local temp_file=$(mktemp)
     
-    # Escape special characters in the path for sed
-    local escaped_path=$(printf '%s' "$dir_path" | sed 's/[[\.*^$()+?{|]/\\&/g')
-    
-    # Remove from exclusions section
-    sed "/\"exclusions\": *{/,/}/ { /\"$escaped_path\":/d; }" "$DOH_CONFIG_FILE" > "$temp_file"
+    # Simple: just remove the line with this directory path
+    grep -v "\"$dir_path\":" "$DOH_CONFIG_FILE" > "$temp_file"
     mv "$temp_file" "$DOH_CONFIG_FILE"
 }
 

@@ -313,10 +313,17 @@ test_remove_exclusion() {
 test_config_integrity() {
     log_test "Config file JSON integrity"
     
+    # Debug: Show the config file content before validation
+    echo "=== Config file content ===" >&2
+    cat "$TEST_DOH_CONFIG/config.json" >&2
+    echo "=== End config file ===" >&2
+    
     # Validate JSON syntax
     if python3 -m json.tool "$TEST_DOH_CONFIG/config.json" >/dev/null 2>&1; then
         pass_test
     else
+        echo "JSON validation failed. Showing python3 error:" >&2
+        python3 -m json.tool "$TEST_DOH_CONFIG/config.json" >&2 || true
         fail_test "Config file is not valid JSON"
     fi
 }
