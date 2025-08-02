@@ -50,6 +50,31 @@ init_config() {
     mkdir -p "$DOH_CONFIG_DIR/logs"
     
     if [[ ! -f "$DOH_CONFIG_FILE" ]]; then
+        generate_fresh_config
+    fi
+}
+
+# Backup current config (keep last 2 backups)
+backup_config() {
+    if [[ -f "$DOH_CONFIG_FILE" ]]; then
+        # Rotate backups: .1 -> .2, current -> .1
+        if [[ -f "$DOH_CONFIG_FILE.backup.1" ]]; then
+            mv "$DOH_CONFIG_FILE.backup.1" "$DOH_CONFIG_FILE.backup.2" 2>/dev/null || true
+        fi
+        cp "$DOH_CONFIG_FILE" "$DOH_CONFIG_FILE.backup.1" 2>/dev/null || true
+    fi
+}
+
+# Generate a completely fresh config file
+generate_fresh_config() {
+    local temp_config=$(mktemp)
+    local script_dir="$(dirname "$0")"
+    
+    # Use the clean Python utility
+    if result=$(python3 "$script_dir/doh-config.py" generate_fresh_config "$DOH_CONFIG_FILE" "$temp_config" 2>&1) && [[ "$result" == "SUCCESS" ]]; then
+        mv "$temp_config" "$DOH_CONFIG_FILE"
+    else
+        # Fallback: create minimal valid config
         cat > "$DOH_CONFIG_FILE" << 'EOF'
 {
   "version": "1.0",
@@ -64,30 +89,32 @@ init_config() {
 }
 EOF
     fi
+    
+    rm -f "$temp_config"
 }
 
-# Read JSON config (simple bash JSON parser for our specific format)
+# Read JSON config using Python for reliability
 get_config_value() {
     local key="$1"
     local dir_path="$2"
+    local script_dir="$(dirname "$0")"
     
-    if [[ -n "$dir_path" ]]; then
-        # Get directory-specific setting
-        grep -o "\"$(printf '%s' "$dir_path" | sed 's/[[\.*^$()+?{|]/\\&/g')\": *{[^}]*\"$key\": *[^,}]*" "$DOH_CONFIG_FILE" | \
-        sed -n "s/.*\"$key\": *\([^,}]*\).*/\1/p" | tr -d '"'
-    else
-        # Get global setting
-        grep -o "\"$key\": *[^,}]*" "$DOH_CONFIG_FILE" | \
-        sed "s/\"$key\": *\([^,}]*\)/\1/" | tr -d '"'
+    if [[ ! -f "$DOH_CONFIG_FILE" ]]; then
+        return 1
     fi
+    
+    # Use the clean Python utility
+    local result=$(python3 "$script_dir/doh-config.py" get_config_value "$DOH_CONFIG_FILE" "$key" "$dir_path" 2>/dev/null)
+    echo "$result"
 }
 
-# Update JSON config
+# Update JSON config using fresh generation
 update_config() {
     local dir_path="$1"
     local threshold="$2"
     local name="$3"
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local script_dir="$(dirname "$0")"
     
     # Check if directory or any parent directory is excluded
     if is_excluded "$dir_path"; then
@@ -105,103 +132,79 @@ update_config() {
         return 1
     fi
     
-    # Create a temporary file with updated config
-    local temp_file=$(mktemp)
-    
     # Generate name if not provided
     if [[ -z "$name" ]]; then
         name=$(basename "$dir_path")
     fi
     
-    # Build config entry
-    local config_entry="\"name\": \"$name\", \"threshold\": $threshold, \"added\": \"$timestamp\", \"last_checked\": \"$timestamp\""
+    # Backup current config before modifying
+    backup_config
     
-    # If directory already exists in config, update it; otherwise add it
-    if grep -q "\"$dir_path\":" "$DOH_CONFIG_FILE"; then
-        # Update existing entry
-        sed "s|\"$dir_path\": *{[^}]*}|\"$dir_path\": {$config_entry}|" \
-            "$DOH_CONFIG_FILE" > "$temp_file"
+    # Use the clean Python utility
+    if result=$(python3 "$script_dir/doh-config.py" add_directory "$DOH_CONFIG_FILE" "$dir_path" "$threshold" "$name" "$timestamp" 2>&1) && [[ "$result" == "SUCCESS" ]]; then
+        # Success
+        :
     else
-        # Add new entry - handle both empty and non-empty directories section
-        if grep -q '"directories": *{}' "$DOH_CONFIG_FILE"; then
-            # Empty directories section - replace {} with {entry}
-            sed "s|\"directories\": *{}|\"directories\": {\\n    \"$dir_path\": {$config_entry}\\n  }|" \
-                "$DOH_CONFIG_FILE" > "$temp_file"
-        else
-            # Non-empty directories section - add entry before closing brace
-            sed "/\"directories\": *{/,/}/ {
-                /}/ {
-                    i\\    \"$dir_path\": {$config_entry},
-                }
-            }" "$DOH_CONFIG_FILE" > "$temp_file"
-        fi
+        echo -e "${RED}Failed to update config: $result${NC}"
+        return 1
     fi
-    
-    mv "$temp_file" "$DOH_CONFIG_FILE"
 }
 
-# Remove directory from config
+# Remove directory from config using fresh generation
 remove_from_config() {
     local dir_path="$1"
-    local temp_file=$(mktemp)
+    local script_dir="$(dirname "$0")"
     
-    grep -v "\"$dir_path\":" "$DOH_CONFIG_FILE" > "$temp_file"
+    # Backup current config before modifying
+    backup_config
     
-    # Fix trailing commas (simple approach)
-    sed 's/,\s*}/}/g' "$temp_file" > "$DOH_CONFIG_FILE"
-    rm -f "$temp_file"
+    # Use the clean Python utility
+    if result=$(python3 "$script_dir/doh-config.py" remove_directory "$DOH_CONFIG_FILE" "$dir_path" 2>&1) && [[ "$result" == "SUCCESS" ]]; then
+        # Success
+        :
+    else
+        echo -e "${RED}Failed to remove from config: $result${NC}"
+        return 1
+    fi
 }
 
-# Check if directory or any parent directory is excluded
+# Check if directory or any parent directory is excluded using Python
 is_excluded() {
     local dir_path="$1"
+    local script_dir="$(dirname "$0")"
     
     if [[ ! -f "$DOH_CONFIG_FILE" ]]; then
         return 1
     fi
     
-    # Check if the directory itself is excluded
-    if sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$dir_path\":"; then
+    # Use the clean Python utility
+    local result=$(python3 "$script_dir/doh-config.py" check_exclusion "$DOH_CONFIG_FILE" "$dir_path" 2>/dev/null)
+    
+    if [[ "$result" == "EXCLUDED" ]]; then
         return 0
+    else
+        return 1
     fi
-    
-    # Check if any parent directory is excluded
-    local current_path="$dir_path"
-    while [[ "$current_path" != "/" && "$current_path" != "." ]]; do
-        current_path=$(dirname "$current_path")
-        if sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$current_path\":"; then
-            return 0
-        fi
-    done
-    
-    return 1
 }
 
 # Find which excluded directory (self or parent) is blocking this path
 find_excluded_parent() {
     local dir_path="$1"
+    local script_dir="$(dirname "$0")"
     
     if [[ ! -f "$DOH_CONFIG_FILE" ]]; then
         return 1
     fi
     
-    # Check if the directory itself is excluded
-    if sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$dir_path\":"; then
-        echo "$dir_path"
+    # Use the clean Python utility
+    local result=$(python3 "$script_dir/doh-config.py" find_excluded_parent "$DOH_CONFIG_FILE" "$dir_path" 2>/dev/null)
+    
+    if [[ -n "$result" ]]; then
+        echo "$result"
         return 0
+    else
+        return 1
     fi
-    
-    # Check if any parent directory is excluded
-    local current_path="$dir_path"
-    while [[ "$current_path" != "/" && "$current_path" != "." ]]; do
-        current_path=$(dirname "$current_path")
-        if sed -n '/\"exclusions\": *{/,/}/p' "$DOH_CONFIG_FILE" | grep -q "\"$current_path\":"; then
-            echo "$current_path"
-            return 0
-        fi
-    done
-    
-    return 1
 }
 
 # Check if directory is monitored
@@ -216,39 +219,46 @@ is_monitored() {
     grep -q "\"$dir_path\":" "$DOH_CONFIG_FILE"
 }
 
-# Add directory to exclusions
+# Add directory to exclusions using fresh generation
 add_exclusion() {
     local dir_path="$1"
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    local temp_file=$(mktemp)
+    local script_dir="$(dirname "$0")"
     
     # Remove from monitoring if it exists
     if is_monitored "$dir_path"; then
         remove_from_config "$dir_path"
     fi
     
-    # Add to exclusions
-    if grep -q "\"$dir_path\":" "$DOH_CONFIG_FILE"; then
-        # Update existing entry in exclusions
-        sed "s|\"$dir_path\": *{[^}]*}|\"$dir_path\": {\"excluded\": \"$timestamp\"}|" \
-            "$DOH_CONFIG_FILE" > "$temp_file"
-    else
-        # Add new exclusion entry
-        sed "/\"exclusions\": *{/a\\    \"$dir_path\": {\"excluded\": \"$timestamp\"}," \
-            "$DOH_CONFIG_FILE" > "$temp_file"
-    fi
+    # Backup current config before modifying
+    backup_config
     
-    mv "$temp_file" "$DOH_CONFIG_FILE"
+    # Use the clean Python utility
+    if result=$(python3 "$script_dir/doh-config.py" add_exclusion "$DOH_CONFIG_FILE" "$dir_path" "$timestamp" 2>&1) && [[ "$result" == "SUCCESS" ]]; then
+        # Success
+        :
+    else
+        echo -e "${RED}Failed to add exclusion: $result${NC}"
+        return 1
+    fi
 }
 
-# Remove directory from exclusions
+# Remove directory from exclusions using fresh generation
 remove_exclusion() {
     local dir_path="$1"
-    local temp_file=$(mktemp)
+    local script_dir="$(dirname "$0")"
     
-    # Simple: just remove the line with this directory path
-    grep -v "\"$dir_path\":" "$DOH_CONFIG_FILE" > "$temp_file"
-    mv "$temp_file" "$DOH_CONFIG_FILE"
+    # Backup current config before modifying
+    backup_config
+    
+    # Use the clean Python utility
+    if result=$(python3 "$script_dir/doh-config.py" remove_exclusion "$DOH_CONFIG_FILE" "$dir_path" 2>&1) && [[ "$result" == "SUCCESS" ]]; then
+        # Success
+        :
+    else
+        echo -e "${RED}Failed to remove exclusion: $result${NC}"
+        return 1
+    fi
 }
 
 # List exclusions
