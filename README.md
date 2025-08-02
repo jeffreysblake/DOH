@@ -4,11 +4,12 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A smart auto-commit monitoring system for git repositories. DOH intelligently tracks changes in your directories and provides insights into when commits should be made based on configurable thresholds.
+A smart auto-commit monitoring system for git repositories. DOH intelligently tracks changes in your directories and automatically commits when thresholds are exceeded, with support for both systemd and cron-based monitoring.
 
 ## ✨ Features
 
 - 🎯 **Smart monitoring**: Automatically tracks git repository changes
+- 🤖 **Auto-commit daemon**: Background monitoring with systemd or cron
 - 📊 **Configurable thresholds**: Set custom line-change limits per directory  
 - 🚫 **Exclusion system**: Exclude directories and their children from monitoring
 - 📈 **Detailed statistics**: View comprehensive git stats with progress indicators
@@ -16,126 +17,172 @@ A smart auto-commit monitoring system for git repositories. DOH intelligently tr
 - ⚡ **Fast & reliable**: Pure Python implementation with proper error handling
 - 💾 **Configuration backup**: Automatic backup system prevents data loss
 - 🐳 **Docker-like naming**: Friendly names for monitored directories
+- � **Git profile support**: Use custom git configurations for commits
+- 🔄 **Force commit**: Instantly commit changes with `-f` flag
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Installation Options
 
-- Python 3.8 or higher
-- Git (for repository monitoring)
-
-### Installation
-
+#### System-wide Installation (Recommended)
 ```bash
-# Clone the repository
+# Clone and install with automatic daemon setup
 git clone <repository-url>
 cd doh
+sudo ./install
 
-# Run the setup script
-./setup.sh
+# Start monitoring (if systemd is available)
+sudo systemctl start doh-daemon@$USER.timer
+sudo systemctl enable doh-daemon@$USER.timer
+```
 
-# Activate the virtual environment
-source .venv/bin/activate
+#### Development Setup
+```bash
+# Clone and set up for development
+git clone <repository-url>
+cd doh
+./scripts/dev-setup
+source venv/bin/activate
+```
+
+#### Manual Daemon Setup (if needed)
+```bash
+# If you need to set up daemon manually or use cron instead
+sudo ./scripts/systemd-setup    # Modern Linux (systemd) - runs every 10 minutes
+./scripts/cron-setup           # Universal (cron) - runs every 5 minutes
 ```
 
 ### Basic Usage
 
 ```bash
 # Add current directory to monitoring (default threshold: 50 lines)
-./doh.py
+doh
 
-# Add with custom threshold and name
-./doh.py --threshold 25 --name "MyProject"
+# Add current directory with custom options
+doh --threshold 25 --name "MyProject"
 
-# Show status of current directory
-./doh.py status
+# Add specific directory to monitoring  
+doh add --threshold 25 --name "MyProject" /path/to/project
+
+# Force commit any changes before adding
+doh -f --threshold 25 --name "MyProject"
+
+# Show status of all monitored directories  
+doh status
 
 # List all monitored directories
-./doh.py list
+doh list
 
-# Force commit changes
-./doh.py commit
+# Show configuration
+doh config
+```
 
-# Remove current directory from monitoring
-./doh.py remove
+### Daemon Management
+
+```bash
+# Run daemon once (perfect for cron)
+doh daemon --once
+
+# Run daemon continuously with verbose output
+doh daemon --verbose
+
+# Check daemon logs
+cat ~/.doh/logs/daemon_$(date +%Y-%m-%d).log
 ```
 
 ### Exclusion Management
 
 ```bash
 # Exclude current directory from monitoring
-./doh.py ex add
+doh ex add
 
-# Exclude specific directory
-./doh.py ex add /path/to/directory
+# Exclude specific directory  
+doh ex add /path/to/directory
 
 # List all exclusions
-./doh.py ex list
+doh ex list
 
-# Remove exclusion
-./doh.py ex rm /path/to/directory
+# Remove exclusion (alias: ex rm)
+doh ex remove /path/to/directory
 ```
 
-## 📖 Detailed Usage
-
-### Smart Directory Adding
-
-DOH is intelligent about directory management:
+### Configuration
 
 ```bash
-# First time in a directory - adds to monitoring
-./doh.py
+# Set git profile for commits (includes gpgsigning=false if in your profile)
+doh configure --git-profile ~/.gitconfig-personal
 
-# Already monitored? Shows current status instead
-./doh.py
+# Set default threshold
+doh configure --threshold 75
+
+# Enable/disable automatic git init for non-git directories
+doh configure --auto-init-git          # Enable (default)
+doh configure --no-auto-init-git       # Disable
+
+# Show current configuration
+doh config
 ```
 
-### Status Display
+## 📖 Command Reference
 
-Get comprehensive information about your repository:
+### Main Commands
 
-```bash
-./doh.py status
-```
+| Command | Description | Examples |
+|---------|-------------|----------|
+| `doh` | Add current directory to monitoring | `doh --threshold 30 --name "API"`<br>`doh -f` (force commit first) |
+| `doh add` | Add directory to monitoring | `doh add --threshold 30 --name "API"`<br>`doh add /path/to/project` |
+| `doh status` | Show monitoring status | `doh status` |
+| `doh list` | List monitored directories | `doh list` |
+| `doh remove` | Remove from monitoring | `doh remove` |
+| `doh daemon` | Run monitoring daemon | `doh daemon --once`<br>`doh daemon --verbose` |
+| `doh commit` | Force commit directory | `doh commit` |
+| `doh config` | Show configuration | `doh config` |
+| `doh configure` | Update configuration | `doh configure --git-profile ~/.gitconfig-work` |
 
-**Example output:**
-```
-Directory Status: /home/user/myproject
-Name: MyAwesomeProject
-Changes: 45 lines (+30/-15) in 3 files
-Untracked files: 2
-Threshold: 50 lines
-✓ Status: THRESHOLD NOT MET
-   Progress: 45/50 lines (90%)
-📍 Directory is being MONITORED
-```
+### Exclusion Commands
 
-### Exclusion System
+| Command | Description | Examples |
+|---------|-------------|----------|
+| `doh ex add` | Add exclusion | `doh ex add`<br>`doh ex add /path/to/dir` |
+| `doh ex list` | List exclusions | `doh ex list` |
+| `doh ex remove` | Remove exclusion | `doh ex remove /path/to/dir` |
 
-DOH supports hierarchical exclusions:
+### Global Options
 
-- **Direct exclusion**: `./doh.py ex add /home/user/temp`
-- **Parent exclusion**: Automatically blocks children of excluded directories
-- **Smart blocking**: Prevents monitoring subdirectories of excluded paths
+| Option | Description | Example |
+|--------|-------------|---------|
+| `-f, --force` | Force commit before command | `doh -f` |
+| `-t, --threshold` | Set threshold for current directory | `doh -t 30` |
+| `-n, --name` | Set name for current directory | `doh -n "MyProject"` |
+| `--verbose` | Verbose output | `doh --verbose daemon` |
+| `--help` | Show help | `doh --help` |
 
 ## 🏗️ Architecture
 
-DOH is built with clean, maintainable Python:
+DOH follows a modern Python package structure:
 
 ```
-doh.py              # Main CLI application
-├── DohCore         # Core business logic
-├── DohConfig       # Configuration management  
-├── GitStats        # Git repository analysis
-└── CLI Commands    # Click-based command interface
+doh/
+├── src/doh/              # Main package source
+│   ├── __init__.py       # Package initialization
+│   ├── cli.py           # Click-based CLI interface
+│   ├── core.py          # Core monitoring logic
+│   ├── config.py        # Configuration management
+│   ├── git_stats.py     # Git statistics engine
+│   └── colors.py        # Terminal colors and formatting
+├── tests/               # Test suite
+│   ├── __init__.py      # Test package
+│   └── test_doh.py      # Main test file
+├── scripts/             # Setup and daemon scripts
+│   ├── dev-setup        # Development environment setup
+│   ├── systemd-setup    # Systemd daemon setup
+│   ├── cron-setup       # Cron daemon setup
+│   ├── doh-daemon@.service  # Systemd service template
+│   └── doh-daemon@.timer    # Systemd timer (10 minute intervals)
+├── install              # Main installation script
+├── pyproject.toml       # Modern Python packaging
+└── README.md           # This file
 ```
-
-### Key Components
-
-- **Configuration**: JSON-based config with automatic backup rotation
-- **Git Integration**: Native git command integration for maximum compatibility
-- **Error Handling**: Comprehensive error handling with helpful messages
-- **Testing**: Full test suite with isolated test environments
 
 ## 🔧 Configuration
 
@@ -143,174 +190,164 @@ DOH stores configuration in `~/.doh/config.json`:
 
 ```json
 {
-  "version": "1.0",
-  "directories": {
+  "global_settings": {
+    "default_threshold": 50,
+    "git_profile": "~/.gitconfig-personal"
+  },
+  "monitored_directories": {
     "/path/to/project": {
       "name": "MyProject",
-      "threshold": 50,
-      "added": "2025-08-02T18:30:00Z",
-      "last_checked": "2025-08-02T18:35:00Z"
+      "threshold": 25,
+      "last_commit": "2024-01-15T10:30:00"
     }
   },
-  "exclusions": {
-    "/path/to/excluded": {
-      "excluded": "2025-08-02T18:25:00Z"
-    }
-  },
-  "global_settings": {
-    "log_retention_days": 30,
-    "default_threshold": 50,
-    "check_interval_minutes": 10,
-    "git_profile": ""
-  }
+  "exclusions": [
+    "/path/to/excluded/dir"
+  ]
 }
 ```
 
-## 🧪 Testing
+### Git Profile Integration
 
-Run the comprehensive test suite:
-
-```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# Run all tests
-python -m pytest test_doh.py -v
-
-# Run with coverage
-pip install pytest-cov
-python -m pytest test_doh.py --cov=doh --cov-report=html
-```
-
-## 🛠️ Development
-
-### Setting up Development Environment
+Configure a custom git profile for auto-commits:
 
 ```bash
-# Install development dependencies
-pip install -r requirements.txt
+# Set global git profile for all DOH commits
+doh configure --git-profile ~/.gitconfig-personal
 
-# Install additional dev tools
-pip install black isort flake8 mypy
-
-# Format code
-black doh.py test_doh.py
-
-# Type checking
-mypy doh.py
+# Example ~/.gitconfig-personal
+[user]
+    name = "Your Name"
+    email = "your.email@example.com"
+[commit]
+    gpgsign = false
+[core]
+    editor = "code --wait"
 ```
 
-### Code Style
+The git profile is automatically applied when DOH creates commits. This is perfect for:
+- Using different email/name for personal vs work commits
+- Disabling GPG signing for auto-commits (`gpgsign = false`)
+- Setting specific git configurations for DOH operations
 
-DOH follows Python best practices:
+### Automatic Git Initialization
 
-- **PEP 8** compliance
-- **Type hints** throughout
-- **Comprehensive docstrings**
-- **Error handling** with proper exceptions
-- **Modular design** with clear separation of concerns
+DOH can automatically initialize git repositories:
+
+```bash
+# Enable automatic git init (default)
+doh configure --auto-init-git
+
+# Disable if you prefer manual initialization
+doh configure --no-auto-init-git
+```
+
+When enabled, DOH will run `git init` automatically when you try to monitor a non-git directory.
+
+## 🤖 Daemon Setup
+
+### Systemd (Recommended for Linux)
+
+```bash
+# Automatic setup during installation
+sudo ./install
+
+# Manual setup if needed
+sudo ./scripts/systemd-setup
+
+# Service management
+sudo systemctl status doh-daemon@$USER.timer
+sudo systemctl start doh-daemon@$USER.timer
+sudo systemctl enable doh-daemon@$USER.timer
+
+# View logs
+journalctl -u doh-daemon@$USER -f
+```
+
+**Note**: The systemd service runs every **10 minutes** to check all monitored directories. This prevents log spam while ensuring timely auto-commits.
+
+### Cron (Universal)
+
+```bash
+# Set up cron job (runs every 5 minutes)
+./scripts/cron-setup
+
+# Manual cron entry
+*/5 * * * * /usr/local/bin/doh daemon --once
+```
+
+## 📊 Monitoring Logic
+
+DOH intelligently monitors directories using these rules:
+
+1. **Git Repository Detection**: Only monitors directories that are git repositories
+2. **Change Threshold**: Automatically commits when line changes exceed threshold
+3. **Exclusion Respect**: Skips any excluded directories and their children
+4. **Profile Application**: Uses configured git profile for all auto-commits
+5. **Safe Operations**: Only commits when working directory is clean (no uncommitted changes)
+
+### Status Indicators
+
+- 🟢 **CLEAN**: No changes detected
+- 🟡 **BELOW**: Changes detected but under threshold  
+- 🔴 **OVER**: Changes exceed threshold (ready for auto-commit)
+- ⚠️ **DIRTY**: Uncommitted changes present (auto-commit skipped)
+- ❌ **NOT_GIT**: Directory is not a git repository
+```
 
 ## 🔍 Troubleshooting
 
 ### Common Issues
 
-**Q: "Not a git repository" error**
+**Command not found after installation:**
 ```bash
-# Initialize git in your directory first
-git init
+# Reload shell or log out/in
+source ~/.bashrc
+# Or check PATH
+echo $PATH | grep /usr/local/bin
 ```
 
-**Q: Directory appears excluded but shouldn't be**
+**Daemon not running:**
 ```bash
-# Check if parent directory is excluded
-./doh.py ex list
+# Check systemd status
+sudo systemctl status doh-daemon
 
-# Remove parent exclusion if needed
-./doh.py ex rm /path/to/parent
+# Check cron
+crontab -l | grep doh
+
+# Manual daemon test
+doh daemon --once --verbose
 ```
 
-**Q: Config file corruption**
+**Git profile not working:**
 ```bash
-# DOH automatically creates backups
-ls ~/.doh/config.json.backup.*
+# Verify profile file exists
+ls -la ~/.gitconfig-personal
 
-# Restore from backup if needed
-cp ~/.doh/config.json.backup.1 ~/.doh/config.json
+# Test configuration
+doh configure --git-profile ~/.gitconfig-personal
+doh config
 ```
 
-### Debug Mode
+### Logs
 
-Enable verbose output:
-
-```bash
-# Set environment variable for debugging
-export DOH_DEBUG=1
-./doh.py status
-```
-
-## 📊 Performance
-
-DOH is designed for speed and efficiency:
-
-- **Single process**: No subprocess overhead
-- **Cached config**: Configuration loaded once per operation
-- **Native git**: Direct git command integration
-- **Minimal dependencies**: Only essential packages required
-
-**Benchmark results** (typical operations):
-- Add directory: ~5ms
-- Check status: ~10ms
-- Update config: ~3ms
+DOH maintains comprehensive logs:
+- Daemon logs: `~/.doh/logs/daemon_YYYY-MM-DD.log`
+- Error logs: Standard output with `--verbose`
+- Configuration backups: `~/.doh/config.json.backup`
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please follow these guidelines:
-
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes with tests
-4. Ensure all tests pass: `python -m pytest`
-5. Format code: `black doh.py test_doh.py`
-6. Submit a pull request
-
-### Feature Requests
-
-We'd love to hear your ideas! Open an issue with:
-- Clear description of the feature
-- Use case examples
-- Expected behavior
+3. Make changes and test: `./scripts/dev-setup && source venv/bin/activate`
+4. Run tests: `python -m pytest tests/`
+5. Submit a pull request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Click**: For the excellent CLI framework
-- **Colorama**: For cross-platform colored output
-- **Git**: For being the foundation of version control
-- **Python**: For making development enjoyable
-
-## 📚 Changelog
-
-### Version 2.0.0 (Current)
-- ✨ Complete rewrite in Python for better performance
-- 🎨 Beautiful CLI with colored output  
-- 🧪 Comprehensive test suite
-- 💾 Automatic configuration backup
-- 🚀 5-10x faster than bash version
-
-### Version 1.0.0 (Legacy)
-- 🐚 Original bash implementation
-- ✅ Basic monitoring functionality
-- 📝 JSON configuration support
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-<div align="center">
-
-**Made with ❤️ for developers who hate losing work**
-
-[Report Bug](issues) · [Request Feature](issues) · [Documentation](wiki)
-
-</div>
+**DOH - Keeping your commits clean and your repos healthy! 🎯**

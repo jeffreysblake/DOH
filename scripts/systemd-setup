@@ -5,7 +5,12 @@ set -e
 
 USER_NAME="${SUDO_USER:-$USER}"
 SERVICE_NAME="doh-daemon@${USER_NAME}.service"
+TIMER_NAME="doh-daemon@${USER_NAME}.timer"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_SERVICE_FILE="$SCRIPT_DIR/doh-daemon@.service"
+SOURCE_TIMER_FILE="$SCRIPT_DIR/doh-daemon@.timer"
 SERVICE_FILE="/etc/systemd/system/doh-daemon@.service"
+TIMER_FILE="/etc/systemd/system/doh-daemon@.timer"
 
 # Colors for output
 RED='\033[0;31m'
@@ -53,20 +58,26 @@ main() {
     
     # Check if systemd is available
     if ! command -v systemctl &> /dev/null; then
-        print_error "systemd is not available on this system. Use cron-setup.sh instead"
+        print_error "systemd is not available on this system. Use scripts/cron-setup instead"
     fi
     
-    print_step "Installing systemd service file"
+    print_step "Installing systemd service and timer files"
     
     # Copy service file
-    if [[ ! -f "doh-daemon@.service" ]]; then
-        print_error "Service file 'doh-daemon@.service' not found in current directory"
+    if [[ ! -f "$SOURCE_SERVICE_FILE" ]]; then
+        print_error "Service file '$SOURCE_SERVICE_FILE' not found"
     fi
     
-    cp "doh-daemon@.service" "$SERVICE_FILE"
-    print_success "Service file installed to $SERVICE_FILE"
+    # Copy timer file
+    if [[ ! -f "$SOURCE_TIMER_FILE" ]]; then
+        print_error "Timer file '$SOURCE_TIMER_FILE' not found"
+    fi
     
-    print_step "Configuring systemd service"
+    cp "$SOURCE_SERVICE_FILE" "$SERVICE_FILE"
+    cp "$SOURCE_TIMER_FILE" "$TIMER_FILE"
+    print_success "Service and timer files installed"
+    
+    print_step "Configuring systemd service and timer"
     
     # Reload systemd
     systemctl daemon-reload
@@ -79,6 +90,13 @@ main() {
         print_error "Service configuration invalid"
     fi
     
+    # Test the timer configuration
+    if systemctl cat "$TIMER_NAME" &> /dev/null; then
+        print_success "Timer configuration valid"
+    else
+        print_error "Timer configuration invalid"
+    fi
+    
     print_step "Testing service (dry run)"
     
     # Test daemon once as the user
@@ -89,29 +107,35 @@ main() {
     fi
     
     echo
-    echo -e "${GREEN}${BOLD}Systemd service setup complete!${NC}"
+    echo -e "${GREEN}${BOLD}Systemd service and timer setup complete!${NC}"
     echo
-    echo "To manage the DOH daemon service:"
+    echo "The DOH daemon will run every 10 minutes via systemd timer."
     echo
-    echo -e "${BLUE}Start the service:${NC}"
-    echo "  sudo systemctl start $SERVICE_NAME"
+    echo "To manage the DOH daemon:"
     echo
-    echo -e "${BLUE}Enable auto-start on boot:${NC}"
-    echo "  sudo systemctl enable $SERVICE_NAME"
+    echo -e "${BLUE}Start the timer (enables monitoring):${NC}"
+    echo "  sudo systemctl start $TIMER_NAME"
     echo
-    echo -e "${BLUE}Check service status:${NC}"
-    echo "  sudo systemctl status $SERVICE_NAME"
+    echo -e "${BLUE}Enable timer to start on boot:${NC}"
+    echo "  sudo systemctl enable $TIMER_NAME"
+    echo
+    echo -e "${BLUE}Check timer status:${NC}"
+    echo "  sudo systemctl status $TIMER_NAME"
+    echo "  sudo systemctl list-timers $TIMER_NAME"
     echo
     echo -e "${BLUE}View logs:${NC}"
     echo "  sudo journalctl -u $SERVICE_NAME -f"
     echo
-    echo -e "${BLUE}Stop the service:${NC}"
-    echo "  sudo systemctl stop $SERVICE_NAME"
+    echo -e "${BLUE}Run once manually:${NC}"
+    echo "  sudo systemctl start $SERVICE_NAME"
     echo
-    echo -e "${BLUE}Disable auto-start:${NC}"
-    echo "  sudo systemctl disable $SERVICE_NAME"
+    echo -e "${BLUE}Stop the timer:${NC}"
+    echo "  sudo systemctl stop $TIMER_NAME"
     echo
-    echo -e "${YELLOW}Note: The service runs as user '$USER_NAME' and monitors directories in their ~/.doh/ config${NC}"
+    echo -e "${BLUE}Disable timer:${NC}"
+    echo "  sudo systemctl disable $TIMER_NAME"
+    echo
+    echo -e "${YELLOW}Note: The service runs as user '$USER_NAME' every 10 minutes and monitors directories in their ~/.doh/ config${NC}"
     echo
     echo "To add directories to monitoring:"
     echo "  sudo -u $USER_NAME doh add [directory]"

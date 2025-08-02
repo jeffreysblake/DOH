@@ -107,18 +107,51 @@ def force_commit_directory(directory: Path) -> bool:
         return False
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version="2.0.0", prog_name="doh")
 @click.option('--force', '-f', is_flag=True, help='Force commit any changes before adding directory')
+@click.option('--threshold', '-t', default=DEFAULT_THRESHOLD, type=int,
+              help=f'Change threshold (default: {DEFAULT_THRESHOLD})')
+@click.option('--name', '-n', help='Name for this directory (defaults to directory name)')
 @click.pass_context
-def main(ctx, force):
+def main(ctx, force, threshold, name):
     """DOH - Directory Oh-no, Handle this!
     
     A smart auto-commit monitoring system for git repositories.
+    
+    When run without a command, adds current directory to monitoring (or shows status if already monitored).
     """
-    # Store force flag in context for commands to access
+    # Store context data for subcommands
     ctx.ensure_object(dict)
     ctx.obj['force'] = force
+    
+    # If no subcommand was invoked, act like 'add' for current directory
+    if ctx.invoked_subcommand is None:
+        directory = Path.cwd().resolve()
+        
+        # Smart behavior: if already monitored, show status instead
+        if doh.is_monitored(directory):
+            click.echo(f"{Colors.YELLOW}Directory already monitored. Showing current status:{Colors.RESET}")
+            click.echo()
+            _show_single_directory_status(directory)
+            return
+        
+        # Handle force commit first if requested
+        if force:
+            if force_commit_directory(directory):
+                click.echo(f"{Colors.GREEN}Changes committed successfully{Colors.RESET}")
+            else:
+                click.echo(f"{Colors.YELLOW}No changes to commit or commit failed{Colors.RESET}")
+        
+        if doh.add_directory(directory, threshold, name):
+            display_name = name or directory.name
+            click.echo(f"{Colors.GREEN}✓ Added '{display_name}' to monitoring{Colors.RESET}")
+            click.echo(f"  Path: {directory}")
+            click.echo(f"  Threshold: {threshold} lines")
+            click.echo()
+            _show_single_directory_status(directory)
+        else:
+            click.echo(f"{Colors.RED}✗ Failed to add directory to monitoring{Colors.RESET}")
 
 
 @main.command()
@@ -421,7 +454,8 @@ def config():
 @main.command()
 @click.option('--git-profile', help='Path to git config file to use for commits (e.g., ~/.gitconfig-personal)')
 @click.option('--threshold', type=int, help='Set default threshold for new directories')
-def configure(git_profile, threshold):
+@click.option('--auto-init-git/--no-auto-init-git', default=None, help='Enable/disable automatic git init for non-git directories')
+def configure(git_profile, threshold, auto_init_git):
     """Configure global DOH settings"""
     data = doh.config.load()
     settings = data.setdefault('global_settings', {})
@@ -442,6 +476,12 @@ def configure(git_profile, threshold):
         settings['default_threshold'] = threshold
         changed = True
         click.echo(f"{Colors.GREEN}✓ Default threshold set to: {threshold}{Colors.RESET}")
+    
+    if auto_init_git is not None:
+        settings['auto_init_git'] = auto_init_git
+        changed = True
+        status = "enabled" if auto_init_git else "disabled"
+        click.echo(f"{Colors.GREEN}✓ Auto git init {status}{Colors.RESET}")
     
     if not changed:
         click.echo(f"{Colors.YELLOW}No changes specified. Use --help to see available options.{Colors.RESET}")
@@ -491,6 +531,39 @@ def daemon(once, verbose, interval):
     )
     
     logger = logging.getLogger('doh-daemon')
+    
+    def should_log_threshold_status(directory: Path, total_changes: int, threshold: int) -> bool:
+        """Check if we should log threshold status to prevent spam"""
+        log_dir = Path.home() / '.doh' / 'logs'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Check logs from last 10 days
+        from datetime import datetime, timedelta
+        cutoff_date = datetime.now() - timedelta(days=10)
+        
+        dir_str = str(directory)
+        status = "OVER" if total_changes >= threshold else "BELOW"
+        
+        # Look through recent log files
+        for log_file in log_dir.glob("daemon_*.log"):
+            try:
+                # Extract date from filename (daemon_YYYY-MM-DD.log)
+                date_str = log_file.stem.split('_', 1)[1]
+                log_date = datetime.strptime(date_str, '%Y-%m-%d')
+                
+                if log_date < cutoff_date:
+                    continue
+                    
+                # Check if this directory + status was already logged
+                with open(log_file, 'r') as f:
+                    for line in f:
+                        if dir_str in line and f"STATUS: {status}" in line:
+                            return False  # Already logged recently
+                            
+            except (ValueError, OSError):
+                continue  # Skip malformed log files
+        
+        return True  # Not found in recent logs, should log
     
     def auto_commit_directory(directory: Path, stats: dict, threshold: int, name: str) -> bool:
         """Perform auto-commit for a directory"""
@@ -605,11 +678,17 @@ This is an automatic commit by DOH monitoring system."""
             total_changes = stats['total_changes'] + stats['untracked']
             
             if total_changes >= threshold:
-                logger.info(f"Threshold exceeded in '{name}': {total_changes} >= {threshold}")
+                if should_log_threshold_status(directory, total_changes, threshold):
+                    logger.info(f"'{name}': {total_changes} changes >= {threshold} threshold - STATUS: OVER - {directory}")
                 if auto_commit_directory(directory, stats, threshold, name):
                     committed += 1
             else:
-                logger.debug(f"'{name}': {total_changes} changes (under threshold {threshold})")
+                # Only log if we haven't logged this status recently
+                if should_log_threshold_status(directory, total_changes, threshold):
+                    logger.debug(f"'{name}': {total_changes} changes < {threshold} threshold - STATUS: BELOW - {directory}")
+                elif verbose:
+                    # Still show in verbose output but don't log to file
+                    click.echo(f"{Colors.YELLOW}'{name}': {total_changes} changes (under threshold {threshold}){Colors.RESET}")
         
         return processed, committed
     

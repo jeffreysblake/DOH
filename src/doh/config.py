@@ -40,15 +40,14 @@ class DohConfig:
     def _get_default_config(self) -> Dict:
         """Get default configuration structure"""
         return {
-            "version": "1.0",
-            "directories": {},
-            "exclusions": {},
             "global_settings": {
-                "log_retention_days": 30,
                 "default_threshold": DEFAULT_THRESHOLD,
-                "check_interval_minutes": 10,
-                "git_profile": ""
-            }
+                "git_profile": "",
+                "auto_init_git": True,
+                "git_init_command": "git init"
+            },
+            "directories": {},
+            "exclusions": []
         }
     
     def load(self) -> Dict:

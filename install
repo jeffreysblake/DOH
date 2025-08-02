@@ -58,7 +58,29 @@ check_requirements() {
         print_error "git is required but not installed"
     fi
     
-    print_success "All requirements met"
+    print_success "doh command is working correctly"
+}
+
+setup_daemon() {
+    print_step "Setting up systemd daemon"
+    
+    # Get the directory where this script is located
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Check if systemd is available
+    if ! command -v systemctl &> /dev/null; then
+        print_warning "systemd not available. You can manually set up cron later with: ./scripts/cron-setup"
+        return
+    fi
+    
+    # Call the systemd setup script
+    if [[ -f "$SCRIPT_DIR/scripts/systemd-setup" ]]; then
+        print_success "Running systemd setup..."
+        "$SCRIPT_DIR/scripts/systemd-setup"
+    else
+        print_warning "Systemd setup script not found. You can run it later with: sudo ./scripts/systemd-setup"
+    fi
+}
 }
 
 create_directories() {
@@ -141,15 +163,14 @@ test_installation() {
 
 main() {
     echo -e "${BOLD}DOH Installation Script${NC}"
-    echo "This will install doh as a system-wide command"
+    echo "Installing DOH as a system-wide Python package"
     echo
     
     check_requirements
-    create_directories
-    setup_virtual_environment
     install_package
     create_system_script
     test_installation
+    setup_daemon
     
     echo
     echo -e "${GREEN}${BOLD}Installation completed successfully!${NC}"
@@ -161,9 +182,19 @@ main() {
     echo
     echo "Configuration will be stored in ~/.doh/"
     echo
+    echo -e "${BLUE}Daemon has been installed and configured.${NC}"
+    echo "To start monitoring:"
+    echo "  sudo systemctl start doh-daemon@$SUDO_USER.timer"
+    echo "  sudo systemctl enable doh-daemon@$SUDO_USER.timer"
+    echo
+    echo "To check daemon status:"
+    echo "  sudo systemctl status doh-daemon@$SUDO_USER.timer"
+    echo
     echo "To uninstall:"
     echo "  sudo rm -rf $INSTALL_DIR"
     echo "  sudo rm -f $SCRIPT_PATH"
+    echo "  sudo systemctl disable doh-daemon@$SUDO_USER.timer"
+    echo "  sudo rm -f /etc/systemd/system/doh-daemon@.*"
 }
 
 # Handle Ctrl+C gracefully

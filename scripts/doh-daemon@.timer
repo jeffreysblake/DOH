@@ -1,0 +1,11 @@
+[Unit]
+Description=DOH Auto-commit Monitoring Timer
+Requires=doh-daemon@%i.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

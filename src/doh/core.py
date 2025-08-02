@@ -86,14 +86,41 @@ class DohCore:
                     print(f"Parent directory '{excluded_parent}' is in the exclusions list")
             return False
         
+        # Check if git repo exists, auto-initialize if configured
         if not GitStats.is_git_repo(directory):
-            try:
-                click.echo(f"{Colors.RED}Directory is not a git repository{Colors.RESET}")
-                click.echo("Use 'git init' to initialize a git repository first")
-            except:
-                print("Directory is not a git repository")
-                print("Use 'git init' to initialize a git repository first")
-            return False
+            data = self.config.load()
+            auto_init = data.get('global_settings', {}).get('auto_init_git', True)
+            
+            if auto_init:
+                try:
+                    import subprocess
+                    # Initialize git repository
+                    result = subprocess.run(['git', 'init'], cwd=directory, 
+                                          capture_output=True, text=True, check=True)
+                    try:
+                        click.echo(f"{Colors.GREEN}✓ Initialized git repository{Colors.RESET}")
+                    except:
+                        print("✓ Initialized git repository")
+                except subprocess.CalledProcessError as e:
+                    try:
+                        click.echo(f"{Colors.RED}Failed to initialize git repository: {e}{Colors.RESET}")
+                    except:
+                        print(f"Failed to initialize git repository: {e}")
+                    return False
+                except Exception as e:
+                    try:
+                        click.echo(f"{Colors.RED}Error initializing git repository: {e}{Colors.RESET}")
+                    except:
+                        print(f"Error initializing git repository: {e}")
+                    return False
+            else:
+                try:
+                    click.echo(f"{Colors.RED}Directory is not a git repository{Colors.RESET}")
+                    click.echo("Use 'git init' to initialize a git repository first")
+                except:
+                    print("Directory is not a git repository")
+                    print("Use 'git init' to initialize a git repository first")
+                return False
         
         data = self.config.load()
         timestamp = datetime.now(timezone.utc).isoformat()
