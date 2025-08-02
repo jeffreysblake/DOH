@@ -1,0 +1,172 @@
+#!/bin/bash
+# DOH Installation Script
+# Installs doh as a system-wide Python package like professional CLI tools
+
+set -e
+
+# Configuration
+INSTALL_DIR="/usr/local/lib/doh"
+BIN_DIR="/usr/local/bin"
+VENV_DIR="$INSTALL_DIR/venv"
+SCRIPT_PATH="$BIN_DIR/doh"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+print_step() {
+    echo -e "${BLUE}${BOLD}==> $1${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}✗ $1${NC}"
+    exit 1
+}
+
+check_requirements() {
+    print_step "Checking requirements"
+    
+    # Check if running as root or with sudo
+    if [[ $EUID -ne 0 ]]; then
+        print_error "This script must be run as root or with sudo"
+    fi
+    
+    # Check for Python 3
+    if ! command -v python3 &> /dev/null; then
+        print_error "Python 3 is required but not installed"
+    fi
+    
+    # Check for pip
+    if ! command -v pip3 &> /dev/null; then
+        print_error "pip3 is required but not installed"
+    fi
+    
+    # Check for git
+    if ! command -v git &> /dev/null; then
+        print_error "git is required but not installed"
+    fi
+    
+    print_success "All requirements met"
+}
+
+create_directories() {
+    print_step "Creating installation directories"
+    
+    # Create installation directory
+    mkdir -p "$INSTALL_DIR"
+    mkdir -p "$BIN_DIR"
+    
+    print_success "Created directories"
+}
+
+setup_virtual_environment() {
+    print_step "Setting up virtual environment"
+    
+    # Remove existing venv if it exists
+    if [[ -d "$VENV_DIR" ]]; then
+        rm -rf "$VENV_DIR"
+    fi
+    
+    # Create new virtual environment
+    python3 -m venv "$VENV_DIR"
+    
+    # Upgrade pip in the venv
+    "$VENV_DIR/bin/pip" install --upgrade pip
+    
+    print_success "Virtual environment created"
+}
+
+install_package() {
+    print_step "Installing doh package"
+    
+    # Get the directory where this script is located (should be the project root)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Install the package in development mode so it can be updated easily
+    "$VENV_DIR/bin/pip" install -e "$SCRIPT_DIR"
+    
+    print_success "Package installed"
+}
+
+create_system_script() {
+    print_step "Creating system-wide doh command"
+    
+    # Create the wrapper script
+    cat > "$SCRIPT_PATH" << 'EOF'
+#!/bin/bash
+# DOH - System wrapper script
+# This script activates the virtual environment and runs the doh CLI
+
+VENV_DIR="/usr/local/lib/doh/venv"
+
+# Check if virtual environment exists
+if [[ ! -f "$VENV_DIR/bin/python" ]]; then
+    echo "Error: DOH virtual environment not found at $VENV_DIR"
+    echo "Please reinstall doh using the install script"
+    exit 1
+fi
+
+# Run doh with the virtual environment's Python
+exec "$VENV_DIR/bin/python" -m doh.cli "$@"
+EOF
+    
+    # Make the script executable
+    chmod +x "$SCRIPT_PATH"
+    
+    print_success "System script created at $SCRIPT_PATH"
+}
+
+test_installation() {
+    print_step "Testing installation"
+    
+    # Test if the command works
+    if "$SCRIPT_PATH" --version &> /dev/null; then
+        print_success "Installation test passed"
+    else
+        print_error "Installation test failed"
+    fi
+}
+
+main() {
+    echo -e "${BOLD}DOH Installation Script${NC}"
+    echo "This will install doh as a system-wide command"
+    echo
+    
+    check_requirements
+    create_directories
+    setup_virtual_environment
+    install_package
+    create_system_script
+    test_installation
+    
+    echo
+    echo -e "${GREEN}${BOLD}Installation completed successfully!${NC}"
+    echo
+    echo "You can now use 'doh' from anywhere:"
+    echo "  doh --help"
+    echo "  doh add"
+    echo "  doh status"
+    echo
+    echo "Configuration will be stored in ~/.doh/"
+    echo
+    echo "To uninstall:"
+    echo "  sudo rm -rf $INSTALL_DIR"
+    echo "  sudo rm -f $SCRIPT_PATH"
+}
+
+# Handle Ctrl+C gracefully
+trap 'echo -e "\n${YELLOW}Installation cancelled by user${NC}"; exit 1' INT
+
+main "$@"

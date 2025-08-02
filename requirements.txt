@@ -1,0 +1,9 @@
+# DOH - Directory Oh-no, Handle this!
+# Auto-commit monitoring system
+
+# Core dependencies
+click>=8.0.0          # CLI framework - much better than argparse
+colorama>=0.4.0       # Cross-platform colored terminal output
+
+# Development dependencies
+pytest>=7.0.0         # Testing framework
