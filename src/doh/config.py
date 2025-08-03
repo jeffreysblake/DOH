@@ -20,7 +20,7 @@ except ImportError:
     click = MockClick()
 
 # Constants
-DEFAULT_THRESHOLD = 50
+DEFAULT_THRESHOLD = 30
 DOH_CONFIG_DIR = Path.home() / ".doh"
 DOH_CONFIG_FILE = DOH_CONFIG_DIR / "config.json"
 
