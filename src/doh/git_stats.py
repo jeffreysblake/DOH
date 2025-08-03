@@ -16,8 +16,8 @@ class GitStats:
             return None
         
         try:
-            # Count untracked files first
-            untracked_count = GitStats._count_untracked(directory)
+            # Count untracked files and lines
+            untracked_info = GitStats._get_untracked_info(directory)
             
             # Check if HEAD exists (repository has commits)
             head_exists = subprocess.run(
@@ -32,7 +32,8 @@ class GitStats:
                     'added': 0,
                     'deleted': 0,
                     'files_changed': 0,
-                    'untracked': untracked_count
+                    'untracked': untracked_info['file_count'],
+                    'untracked_lines': untracked_info['line_count']
                 }
             
             # Get detailed stats for tracked file changes
@@ -60,7 +61,8 @@ class GitStats:
                 'added': added,
                 'deleted': deleted,
                 'files_changed': files_changed,
-                'untracked': untracked_count
+                'untracked': untracked_info['file_count'],
+                'untracked_lines': untracked_info['line_count']
             }
             
         except subprocess.CalledProcessError:
@@ -79,13 +81,63 @@ class GitStats:
             return False
     
     @staticmethod
-    def _count_untracked(directory: Path) -> int:
-        """Count untracked files"""
+    def _get_untracked_info(directory: Path) -> dict:
+        """Get info about untracked files (count and total lines)"""
         try:
+            # Get list of untracked files
             result = subprocess.run(
                 ['git', '-C', str(directory), 'ls-files', '--others', '--exclude-standard'],
                 capture_output=True, text=True, check=True
             )
-            return len([line for line in result.stdout.strip().split('\n') if line])
+            
+            untracked_files = [line for line in result.stdout.strip().split('\n') if line]
+            if not untracked_files:
+                return {'file_count': 0, 'line_count': 0}
+            
+            total_lines = 0
+            for file_path in untracked_files:
+                full_path = directory / file_path
+                try:
+                    # Only count text files, skip binary files
+                    with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = sum(1 for _ in f)
+                        total_lines += lines
+                except (OSError, UnicodeDecodeError, PermissionError):
+                    # Skip files we can't read or binary files
+                    # But still count them as 1 line each so they're not ignored
+                    total_lines += 1
+                    
+            return {'file_count': len(untracked_files), 'line_count': total_lines}
+        except subprocess.CalledProcessError:
+            return {'file_count': 0, 'line_count': 0}
+
+    @staticmethod
+    def _count_untracked(directory: Path) -> int:
+        """Count lines in untracked files"""
+        try:
+            # Get list of untracked files
+            result = subprocess.run(
+                ['git', '-C', str(directory), 'ls-files', '--others', '--exclude-standard'],
+                capture_output=True, text=True, check=True
+            )
+            
+            untracked_files = [line for line in result.stdout.strip().split('\n') if line]
+            if not untracked_files:
+                return 0
+            
+            total_lines = 0
+            for file_path in untracked_files:
+                full_path = directory / file_path
+                try:
+                    # Only count text files, skip binary files
+                    with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = sum(1 for _ in f)
+                        total_lines += lines
+                except (OSError, UnicodeDecodeError, PermissionError):
+                    # Skip files we can't read or binary files
+                    # But still count them as 1 line each so they're not ignored
+                    total_lines += 1
+                    
+            return total_lines
         except subprocess.CalledProcessError:
             return 0

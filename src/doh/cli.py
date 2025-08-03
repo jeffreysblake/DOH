@@ -46,7 +46,8 @@ def _show_single_directory_status(directory: Path):
     else:
         total_changes = stats['total_changes']
         untracked = stats['untracked']
-        total_all = total_changes + untracked
+        untracked_lines = stats.get('untracked_lines', stats['untracked'])
+        total_all = total_changes + untracked_lines
         
         if total_all == 0:
             status = f"{Colors.GREEN}CLEAN{Colors.RESET}"
@@ -142,7 +143,7 @@ def main(ctx, force, threshold, name):
             
             stats = GitStats.get_stats(directory)
             if stats:
-                total_changes = stats['total_changes'] + stats['untracked']
+                total_changes = stats['total_changes'] + stats.get('untracked_lines', stats['untracked'])
                 
                 # Auto-commit if over threshold (even without -f flag)
                 if total_changes >= dir_threshold:
@@ -265,13 +266,14 @@ def list():
         else:
             total_changes = stats['total_changes']
             untracked = stats['untracked']
+            untracked_lines = stats.get('untracked_lines', stats['untracked'])
             
-            if total_changes + untracked == 0:
+            if total_changes + untracked_lines == 0:
                 status = f"{Colors.GREEN}CLEAN{Colors.RESET}"
-            elif total_changes + untracked >= threshold:
-                status = f"{Colors.RED}THRESHOLD EXCEEDED ({total_changes + untracked}){Colors.RESET}"
+            elif total_changes + untracked_lines >= threshold:
+                status = f"{Colors.RED}THRESHOLD EXCEEDED ({total_changes + untracked_lines}){Colors.RESET}"
             else:
-                status = f"{Colors.YELLOW}CHANGES ({total_changes + untracked}){Colors.RESET}"
+                status = f"{Colors.YELLOW}CHANGES ({total_changes + untracked_lines}){Colors.RESET}"
         
         click.echo(f"{Colors.BLUE}{name:<30}{Colors.RESET} {status}")
         click.echo(f"  Path: {dir_path}")
@@ -589,7 +591,7 @@ def daemon(once, verbose, interval):
         """Perform auto-commit for a directory"""
         try:
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            total_changes = stats['total_changes'] + stats['untracked']
+            total_changes = stats['total_changes'] + stats.get('untracked_lines', stats['untracked'])
             
             commit_msg = f"""DOH Auto-commit: {timestamp}
 
@@ -695,7 +697,7 @@ This is an automatic commit by DOH monitoring system."""
                 logger.warning(f"Not a git repository: {name} ({directory})")
                 continue
             
-            total_changes = stats['total_changes'] + stats['untracked']
+            total_changes = stats['total_changes'] + stats.get('untracked_lines', stats['untracked'])
             
             if total_changes >= threshold:
                 if should_log_threshold_status(directory, total_changes, threshold):
