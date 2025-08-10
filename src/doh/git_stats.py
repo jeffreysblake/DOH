@@ -3,6 +3,7 @@ Git repository statistics gathering
 """
 
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -27,13 +28,23 @@ class GitStats:
             
             if not head_exists:
                 # New repository with no commits - only untracked files matter
+                file_stats = []
+                for file_path, line_count in untracked_info.get('file_details', []):
+                    file_stats.append({
+                        'file': file_path,
+                        'added': line_count,
+                        'deleted': 0,
+                        'status': 'new'
+                    })
+                
                 return {
                     'total_changes': 0,
                     'added': 0,
                     'deleted': 0,
                     'files_changed': 0,
                     'untracked': untracked_info['file_count'],
-                    'untracked_lines': untracked_info['line_count']
+                    'untracked_lines': untracked_info['line_count'],
+                    'file_stats': file_stats
                 }
             
             # Get detailed stats for tracked file changes
@@ -43,18 +54,46 @@ class GitStats:
             )
             
             added = deleted = files_changed = 0
+            file_stats = []
+            
             for line in result.stdout.strip().split('\n'):
                 if line:
                     parts = line.split('\t')
-                    if len(parts) >= 2:
+                    if len(parts) >= 3:
                         try:
-                            if parts[0] != '-':
-                                added += int(parts[0])
-                            if parts[1] != '-':
-                                deleted += int(parts[1])
+                            file_added = 0 if parts[0] == '-' else int(parts[0])
+                            file_deleted = 0 if parts[1] == '-' else int(parts[1])
+                            file_path = parts[2]
+                            
+                            added += file_added
+                            deleted += file_deleted
                             files_changed += 1
+                            
+                            # Determine file status
+                            if file_added > 0 and file_deleted == 0:
+                                status = 'modified' if file_added < 50 else 'added'  # Heuristic for new vs modified
+                            elif file_deleted > 0 and file_added == 0:
+                                status = 'deleted'
+                            else:
+                                status = 'modified'
+                            
+                            file_stats.append({
+                                'file': file_path,
+                                'added': file_added,
+                                'deleted': file_deleted,
+                                'status': status
+                            })
                         except ValueError:
                             continue
+            
+            # Add untracked files to file_stats
+            for file_path, line_count in untracked_info.get('file_details', []):
+                file_stats.append({
+                    'file': file_path,
+                    'added': line_count,
+                    'deleted': 0,
+                    'status': 'new'
+                })
             
             return {
                 'total_changes': added + deleted,
@@ -62,7 +101,8 @@ class GitStats:
                 'deleted': deleted,
                 'files_changed': files_changed,
                 'untracked': untracked_info['file_count'],
-                'untracked_lines': untracked_info['line_count']
+                'untracked_lines': untracked_info['line_count'],
+                'file_stats': file_stats
             }
             
         except subprocess.CalledProcessError:
@@ -92,9 +132,11 @@ class GitStats:
             
             untracked_files = [line for line in result.stdout.strip().split('\n') if line]
             if not untracked_files:
-                return {'file_count': 0, 'line_count': 0}
+                return {'file_count': 0, 'line_count': 0, 'file_details': []}
             
             total_lines = 0
+            file_details = []
+            
             for file_path in untracked_files:
                 full_path = directory / file_path
                 try:
@@ -102,14 +144,20 @@ class GitStats:
                     with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
                         lines = sum(1 for _ in f)
                         total_lines += lines
+                        file_details.append((file_path, lines))
                 except (OSError, UnicodeDecodeError, PermissionError):
                     # Skip files we can't read or binary files
                     # But still count them as 1 line each so they're not ignored
                     total_lines += 1
+                    file_details.append((file_path, 1))
                     
-            return {'file_count': len(untracked_files), 'line_count': total_lines}
+            return {
+                'file_count': len(untracked_files), 
+                'line_count': total_lines,
+                'file_details': file_details
+            }
         except subprocess.CalledProcessError:
-            return {'file_count': 0, 'line_count': 0}
+            return {'file_count': 0, 'line_count': 0, 'file_details': []}
 
     @staticmethod
     def _count_untracked(directory: Path) -> int:
@@ -141,3 +189,77 @@ class GitStats:
             return total_lines
         except subprocess.CalledProcessError:
             return 0
+
+    @staticmethod
+    def format_file_changes(file_stats: list, max_files: int = 5) -> str:
+        """Format file changes for commit messages using git diff notation"""
+        if not file_stats:
+            return "No file changes detected"
+        
+        # Sort by total changes (added + deleted) descending
+        sorted_files = sorted(file_stats, 
+                            key=lambda f: f['added'] + f['deleted'], 
+                            reverse=True)
+        
+        formatted_files = []
+        for file_info in sorted_files[:max_files]:
+            file_path = file_info['file']
+            added = file_info['added']
+            deleted = file_info['deleted']
+            status = file_info['status']
+            
+            # Format based on change type
+            if status == 'new':
+                formatted_files.append(f"{file_path} (+{added})")
+            elif status == 'deleted':
+                formatted_files.append(f"{file_path} (-{deleted})")
+            elif added > 0 and deleted > 0:
+                formatted_files.append(f"{file_path} (+{added}/-{deleted})")
+            elif added > 0:
+                formatted_files.append(f"{file_path} (~{added})")
+            elif deleted > 0:
+                formatted_files.append(f"{file_path} (-{deleted})")
+            else:
+                formatted_files.append(f"{file_path} (modified)")
+        
+        result = ", ".join(formatted_files)
+        
+        # Add summary if there are more files
+        if len(file_stats) > max_files:
+            remaining = len(file_stats) - max_files
+            result += f", +{remaining} more files"
+        
+        return result
+
+    @staticmethod
+    def create_enhanced_commit_message(name: str, stats: dict, threshold: int) -> str:
+        """Create an enhanced commit message with per-file statistics"""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        total_changes = stats['total_changes'] + stats.get('untracked_lines', stats['untracked'])
+        
+        # Create short summary for commit title
+        file_summary = GitStats.format_file_changes(stats.get('file_stats', []), max_files=3)
+        
+        # Commit title (first line)
+        commit_title = f"Auto-commit: {file_summary}"
+        
+        # Detailed commit body
+        commit_body = f"""
+Project: {name}
+Timestamp: {timestamp}
+Threshold: {threshold} lines (exceeded with {total_changes} changes)
+
+File Changes:
+{GitStats.format_file_changes(stats.get('file_stats', []), max_files=10)}
+
+Summary:
+- Lines added: {stats['added']}
+- Lines deleted: {stats['deleted']}
+- Total line changes: {stats['total_changes']}
+- Files modified: {stats['files_changed']}
+- Untracked files: {stats['untracked']}
+
+Auto-committed by DOH monitoring system.
+"""
+        
+        return commit_title + commit_body

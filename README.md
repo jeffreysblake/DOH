@@ -1,16 +1,16 @@
 # DOH - Directory Oh-no, Handle this! 🎯
 
-**Automatic git commits for rapid development.** DOH monitors your repositories and creates commits as changes accumulate, so you can focus on building without managing commit state.
+**Automatic git commits for the chronically forgetful.** DOH monitors your repositories and creates commits when changes pile up, so you can focus on coding without constantly remembering to commit.
 
 ## Why Choose DOH?
 
-🎯 **Continuous Snapshots** - Automatic commits during rapid iteration and refactoring  
-🤖 **Zero Overhead** - Background monitoring every 10 minutes with no interruptions  
-📊 **Configurable Triggers** - Set line-change thresholds that match your workflow  
-🚫 **Smart Exclusions** - Skip build directories and files you don't want tracked  
-⚡ **Seamless Integration** - Works silently while you code
+🎯 **Automatic Safety Net** - Helps prevent losing work to crashes, power outages, or forgotten commits  
+🤖 **Set and Forget** - Background monitoring every 10 minutes with zero maintenance  
+📊 **Smart Thresholds** - Configure how many lines of changes trigger auto-commits  
+🚫 **Flexible Control** - Exclude directories you don't want monitored  
+⚡ **Zero Friction** - Works silently in the background, no interruptions
 
-Perfect for LLM-assisted development, prototyping, and high-churn workflows!
+Perfect for ADHD developers and anyone who gets lost in flow state!
 
 ## Quick Start
 
@@ -49,9 +49,29 @@ cd ~/work/frontend && doh --threshold 50
 
 ### 🚫 Skip Generated Files
 ```bash
-# Exclude build output and dependencies
-doh ex add /path/to/dist
+```
+
+## Use Cases
+
+### 🛡️ Protect Work in Progress
+```bash
+# Monitor your current project with a 30-line safety net
+doh --threshold 30 --name "My Important Project"
+```
+
+### 📁 Monitor Multiple Projects
+```bash
+# Set different thresholds for different projects
+cd ~/work/api-server && doh --threshold 100
+cd ~/personal/website && doh --threshold 25
+```
+
+### 🚫 Exclude Build Directories
+```bash
+# Don't monitor temporary/build directories
+doh ex add /path/to/build
 doh ex add /path/to/node_modules
+```
 ```
 
 ## How It Works
@@ -67,57 +87,97 @@ Auto-commits include helpful messages like: `"Auto-commit: 67 lines changed in M
 
 ## Essential Commands
 
-| Command | Purpose |
-|---------|---------|
+| Command | What it does |
+|---------|-------------|
 | `doh` | Start monitoring current directory |
-| `doh status` | Show monitoring status |
+| `doh status` | Show monitoring status for all projects |
+| `doh list` | List all monitored directories |
 | `doh remove` | Stop monitoring current directory |
-| `doh ex add <path>` | Exclude directory from monitoring |
+| `doh ex add <path>` | Exclude a directory from monitoring |
 
 ## Configuration
 
+### Set Your Preferences
 ```bash
-# Adjust threshold for your workflow
+# Change default threshold
 doh configure --threshold 75
 
-# Use custom git profile for auto-commits
+# Use a custom git profile for auto-commits
 doh configure --git-profile ~/.gitconfig-work
 
-# View current settings
+# Enable automatic git init for new projects
+doh configure --auto-init-git
+```
+
+### View Current Settings
+```bash
 doh config
 ```
 
 ## Advanced Usage
 
-Need more control? DOH has you covered:
-
+### Force Commit Before Monitoring
 ```bash
-# Force commit existing changes before monitoring
-doh -f --threshold 50
+doh -f --threshold 50  # Commits any existing changes first
+```
 
-# Control the background daemon
+### Control the Background Daemon
+```bash
+# Check if daemon is running
 systemctl --user status doh-monitor.timer
+
+# Stop monitoring temporarily
 systemctl --user stop doh-monitor.timer
 
-# View activity logs
+# Restart monitoring
+systemctl --user start doh-monitor.timer
+```
+
+### View Activity Logs
+```bash
+# See what DOH is doing
 journalctl --user -u doh-monitor -f
 ```
 
-## Installation & Troubleshooting
+## Installation Details
 
-**Standard Installation:**
+### Standard Installation
 ```bash
 pip install doh-monitor
 ```
 
-**Command not found?** Add to PATH:
+### Development Installation
+If you want to contribute or modify DOH:
+```bash
+git clone <repository-url>
+cd doh
+./install
+```
+
+### PATH Setup (if needed)
+If `doh` command isn't found after installation:
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+## Troubleshooting
+
+**Command not found?**
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-**Check daemon status:**
+**Daemon not running?**
 ```bash
 systemctl --user status doh-monitor.timer
+# or test manually:
+doh daemon --once
+```
+
+**Want to see activity?**
+```bash
+journalctl --user -u doh-monitor -f
 ```
 
 ## Uninstall
@@ -137,8 +197,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Disclaimer
 
-DOH is provided "as is" without warranty. While it helps preserve work through automatic commits, it's not a replacement for proper backup strategies. Users are responsible for their own code safety and should maintain regular backups.
+DOH is provided "as is" without warranty of any kind. While DOH aims to help preserve your work through automatic commits, it is not a replacement for proper backup strategies and good development practices. Users are responsible for their own code safety and should maintain regular backups.
 
 ---
 
-**DOH - Because `git commit` shouldn't interrupt your flow! 🎯**
+**DOH - Because `git commit` shouldn't be an afterthought! 🎯**

@@ -61,6 +61,16 @@ def _show_single_directory_status(directory: Path):
         click.echo(f"    Changes: +{stats['added']} -{stats['deleted']} (files: {stats['files_changed']})")
         if stats['untracked'] > 0:
             click.echo(f"    Untracked: {stats['untracked']} files")
+        
+        # Show enhanced file details if there are changes
+        file_stats = stats.get('file_stats', [])
+        if file_stats:
+            file_summary = GitStats.format_file_changes(file_stats, max_files=5)
+            click.echo(f"    Files: {file_summary}")
+            
+            # Show warning if approaching threshold
+            if total_all >= threshold * 0.8 and total_all < threshold:
+                click.echo(f"    {Colors.YELLOW}⚠ Approaching threshold - {threshold - total_all} lines remaining{Colors.RESET}")
 
 
 def force_commit_directory(directory: Path) -> bool:
@@ -69,6 +79,15 @@ def force_commit_directory(directory: Path) -> bool:
         return False
     
     try:
+        # Get current stats for enhanced commit message
+        stats = GitStats.get_stats(directory)
+        if not stats:
+            return False
+        
+        # Use name from directory
+        name = directory.name
+        threshold = 0  # Force commit regardless of threshold
+        
         # Get git profile from config if set
         data = doh.config.load()
         git_profile = data.get('global_settings', {}).get('git_profile', '')
@@ -94,9 +113,8 @@ def force_commit_directory(directory: Path) -> bool:
             # Nothing staged to commit
             return False
         
-        # Create commit with timestamp
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        commit_msg = f"DOH auto-commit: {timestamp}"
+        # Create enhanced commit message for force commit
+        commit_msg = f"Manual commit: {GitStats.format_file_changes(stats.get('file_stats', []), max_files=5)}"
         
         subprocess.run(
             git_cmd + ['commit', '-m', commit_msg],
@@ -593,21 +611,8 @@ def daemon(once, verbose, interval):
     def auto_commit_directory(directory: Path, stats: dict, threshold: int, name: str) -> bool:
         """Perform auto-commit for a directory"""
         try:
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            total_changes = stats['total_changes'] + stats.get('untracked_lines', stats['untracked'])
-            
-            commit_msg = f"""DOH Auto-commit: {timestamp}
-
-Changes detected in '{name}':
-- Lines added: {stats['added']}
-- Lines deleted: {stats['deleted']}
-- Total changes: {stats['total_changes']}
-- Files modified: {stats['files_changed']}
-- Untracked files: {stats['untracked']}
-
-Threshold exceeded ({total_changes} > {threshold} lines)
-
-This is an automatic commit by DOH monitoring system."""
+            # Use enhanced commit message format
+            commit_msg = GitStats.create_enhanced_commit_message(name, stats, threshold)
             
             # Get git profile from config if set
             data = doh.config.load()
@@ -644,9 +649,13 @@ This is an automatic commit by DOH monitoring system."""
                 capture_output=True, check=True
             )
             
-            logger.info(f"✓ Auto-commit successful in '{name}': +{stats['added']}/-{stats['deleted']} lines across {stats['files_changed']} files")
+            # Create enhanced log message with file details
+            file_summary = GitStats.format_file_changes(stats.get('file_stats', []), max_files=3)
+            total_changes = stats['total_changes'] + stats.get('untracked_lines', stats['untracked'])
+            
+            logger.info(f"✓ Auto-commit successful in '{name}': {file_summary} ({total_changes} total changes)")
             if verbose:
-                click.echo(f"{Colors.GREEN}✓ Auto-committed '{name}': {total_changes} changes{Colors.RESET}")
+                click.echo(f"{Colors.GREEN}✓ Auto-committed '{name}': {file_summary}{Colors.RESET}")
             
             return True
             
