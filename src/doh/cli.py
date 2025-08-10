@@ -489,6 +489,10 @@ def config():
     click.echo(f"Excluded directories: {len(exclusions_dict)}")
     click.echo(f"Default threshold: {settings.get('default_threshold', DEFAULT_THRESHOLD)}")
     click.echo(f"Git profile: {settings.get('git_profile', 'None')}")
+    click.echo(f"Auto git init: {settings.get('auto_init_git', True)}")
+    click.echo(f"Use temp branches: {settings.get('use_temp_branches', True)}")
+    click.echo(f"Temp branch prefix: {settings.get('temp_branch_prefix', 'doh-auto-commits')}")
+    click.echo(f"Temp branch cleanup days: {settings.get('max_temp_branch_age_days', 7)}")
     
     if doh.config.config_file.exists():
         size = doh.config.config_file.stat().st_size
@@ -499,7 +503,10 @@ def config():
 @click.option('--git-profile', help='Path to git config file to use for commits (e.g., ~/.gitconfig-personal)')
 @click.option('--threshold', type=int, help='Set default threshold for new directories')
 @click.option('--auto-init-git/--no-auto-init-git', default=None, help='Enable/disable automatic git init for non-git directories')
-def configure(git_profile, threshold, auto_init_git):
+@click.option('--temp-branches/--no-temp-branches', default=None, help='Enable/disable temporary branch strategy')
+@click.option('--temp-branch-prefix', help='Set prefix for temporary branch names (default: doh-auto-commits)')
+@click.option('--temp-branch-cleanup-days', type=int, help='Days after which to clean up old temp branches (default: 7)')
+def configure(git_profile, threshold, auto_init_git, temp_branches, temp_branch_prefix, temp_branch_cleanup_days):
     """Configure global DOH settings"""
     data = doh.config.load()
     settings = data.setdefault('global_settings', {})
@@ -526,6 +533,22 @@ def configure(git_profile, threshold, auto_init_git):
         changed = True
         status = "enabled" if auto_init_git else "disabled"
         click.echo(f"{Colors.GREEN}✓ Auto git init {status}{Colors.RESET}")
+    
+    if temp_branches is not None:
+        settings['use_temp_branches'] = temp_branches
+        changed = True
+        status = "enabled" if temp_branches else "disabled"
+        click.echo(f"{Colors.GREEN}✓ Temporary branch strategy {status}{Colors.RESET}")
+    
+    if temp_branch_prefix is not None:
+        settings['temp_branch_prefix'] = temp_branch_prefix
+        changed = True
+        click.echo(f"{Colors.GREEN}✓ Temporary branch prefix set to: {temp_branch_prefix}{Colors.RESET}")
+    
+    if temp_branch_cleanup_days is not None:
+        settings['max_temp_branch_age_days'] = temp_branch_cleanup_days
+        changed = True
+        click.echo(f"{Colors.GREEN}✓ Temporary branch cleanup age set to: {temp_branch_cleanup_days} days{Colors.RESET}")
     
     if not changed:
         click.echo(f"{Colors.YELLOW}No changes specified. Use --help to see available options.{Colors.RESET}")
@@ -612,12 +635,12 @@ def daemon(once, verbose, interval):
     def auto_commit_directory(directory: Path, stats: dict, threshold: int, name: str) -> bool:
         """Perform auto-commit for a directory"""
         try:
-            # Use enhanced commit message format
-            commit_msg = GitStats.create_enhanced_commit_message(name, stats, threshold)
-            
-            # Get git profile from config if set
+            # Get configuration settings
             data = doh.config.load()
-            git_profile = data.get('global_settings', {}).get('git_profile', '')
+            global_settings = data.get('global_settings', {})
+            use_temp_branches = global_settings.get('use_temp_branches', True)
+            temp_branch_prefix = global_settings.get('temp_branch_prefix', 'doh-auto-commits')
+            git_profile = global_settings.get('git_profile', '')
             
             git_cmd = ['git', '-C', str(directory)]
             
@@ -627,8 +650,33 @@ def daemon(once, verbose, interval):
                 if profile_path.exists():
                     git_cmd.extend(['-c', f'include.path={profile_path}'])
             
+            # Handle temporary branch strategy
+            original_branch = None
+            temp_branch = None
+            
+            if use_temp_branches:
+                try:
+                    # Get current branch
+                    result = subprocess.run(
+                        git_cmd + ['branch', '--show-current'],
+                        capture_output=True, text=True, check=True
+                    )
+                    original_branch = result.stdout.strip()
+                    
+                    # Get or create temp branch
+                    temp_branch = GitStats.get_or_create_temp_branch(directory, temp_branch_prefix)
+                    
+                    # Switch to temp branch if not already on it
+                    if original_branch != temp_branch:
+                        GitStats.switch_to_temp_branch(directory, temp_branch)
+                        
+                except subprocess.CalledProcessError:
+                    # Fallback to direct commits if temp branch fails
+                    use_temp_branches = False
+                    logger.warning(f"Failed to create temp branch for {name}, falling back to direct commits")
+            
             # Stage all changes
-            result = subprocess.run(
+            subprocess.run(
                 git_cmd + ['add', '.'],
                 capture_output=True, check=True
             )
@@ -644,6 +692,9 @@ def daemon(once, verbose, interval):
                 logger.info(f"No changes to commit in {name} ({directory})")
                 return False
             
+            # Use enhanced commit message format
+            commit_msg = GitStats.create_enhanced_commit_message(name, stats, threshold)
+            
             # Commit changes
             subprocess.run(
                 git_cmd + ['commit', '-m', commit_msg],
@@ -654,9 +705,14 @@ def daemon(once, verbose, interval):
             file_summary = GitStats.format_file_changes(stats.get('file_stats', []), max_files=3)
             total_changes = stats['total_changes'] + stats.get('untracked_lines', stats['untracked'])
             
-            logger.info(f"✓ Auto-commit successful in '{name}': {file_summary} ({total_changes} total changes)")
+            branch_info = f" (temp branch: {temp_branch})" if use_temp_branches else ""
+            logger.info(f"✓ Auto-commit successful in '{name}': {file_summary} ({total_changes} total changes){branch_info}")
+            
             if verbose:
-                click.echo(f"{Colors.GREEN}✓ Auto-committed '{name}': {file_summary}{Colors.RESET}")
+                if use_temp_branches:
+                    click.echo(f"{Colors.GREEN}✓ Auto-committed '{name}' to temp branch '{temp_branch}': {file_summary}{Colors.RESET}")
+                else:
+                    click.echo(f"{Colors.GREEN}✓ Auto-committed '{name}': {file_summary}{Colors.RESET}")
             
             return True
             
@@ -783,6 +839,116 @@ def daemon(once, verbose, interval):
         if verbose:
             click.echo(f"{Colors.RED}Daemon error: {e}{Colors.RESET}")
         raise
+
+
+@main.group()
+def temp():
+    """Manage temporary auto-commit branches"""
+    pass
+
+
+@temp.command()
+@click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path), 
+                required=False)
+def branches(directory):
+    """Show status of temporary branches in a directory"""
+    if directory is None:
+        directory = Path.cwd()
+    
+    directory = directory.resolve()
+    
+    if not GitStats.is_git_repo(directory):
+        click.echo(f"{Colors.RED}Not a git repository: {directory}{Colors.RESET}")
+        return
+    
+    branches = GitStats.list_temp_branches(directory)
+    
+    if not branches:
+        click.echo(f"{Colors.YELLOW}No temporary branches found in {directory.name}{Colors.RESET}")
+        return
+    
+    click.echo(f"{Colors.BLUE}Temporary branches in {directory.name}:{Colors.RESET}")
+    for branch in branches:
+        click.echo(f"  {Colors.GREEN}{branch['name']}{Colors.RESET}")
+        click.echo(f"    Commits: {branch['commit_count']}")
+        click.echo(f"    Last commit: {branch['last_commit']}")
+
+
+@temp.command()
+@click.argument('commit_message')
+@click.option('--target', '-t', default='main', help='Target branch to merge into (default: main)')
+@click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path), 
+                required=False)
+def squash(commit_message, target, directory):
+    """Squash temporary branch commits into target branch with proper commit message"""
+    if directory is None:
+        directory = Path.cwd()
+    
+    directory = directory.resolve()
+    
+    if not GitStats.is_git_repo(directory):
+        click.echo(f"{Colors.RED}Not a git repository: {directory}{Colors.RESET}")
+        return
+    
+    # Check if we're on a temp branch
+    try:
+        result = subprocess.run(
+            ['git', '-C', str(directory), 'branch', '--show-current'],
+            capture_output=True, text=True, check=True
+        )
+        current_branch = result.stdout.strip()
+        
+        if not current_branch.startswith('doh-auto-commits'):
+            click.echo(f"{Colors.RED}Not currently on a temporary branch. Current branch: {current_branch}{Colors.RESET}")
+            
+            # Show available temp branches
+            branches = GitStats.list_temp_branches(directory)
+            if branches:
+                click.echo(f"\nAvailable temporary branches:")
+                for branch in branches:
+                    click.echo(f"  {branch['name']} ({branch['commit_count']} commits)")
+                click.echo(f"\nUse 'git checkout <branch-name>' to switch to a temp branch first.")
+            
+            return
+        
+        # Perform squash merge
+        if GitStats.squash_temp_commits(directory, target, commit_message, current_branch):
+            click.echo(f"{Colors.GREEN}✓ Successfully squashed {current_branch} into {target}{Colors.RESET}")
+            click.echo(f"Commit message: {commit_message}")
+        else:
+            click.echo(f"{Colors.RED}✗ Failed to squash temporary branch{Colors.RESET}")
+            
+    except subprocess.CalledProcessError as e:
+        click.echo(f"{Colors.RED}Error: {e}{Colors.RESET}")
+
+
+@temp.command()
+@click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path), 
+                required=False)
+def cleanup(directory):
+    """Clean up old temporary branches"""
+    if directory is None:
+        directory = Path.cwd()
+    
+    directory = directory.resolve()
+    
+    if not GitStats.is_git_repo(directory):
+        click.echo(f"{Colors.RED}Not a git repository: {directory}{Colors.RESET}")
+        return
+    
+    # Get configuration
+    data = doh.config.load()
+    max_age_days = data.get('global_settings', {}).get('max_temp_branch_age_days', 7)
+    
+    branches = GitStats.list_temp_branches(directory)
+    
+    if not branches:
+        click.echo(f"{Colors.YELLOW}No temporary branches to clean up{Colors.RESET}")
+        return
+    
+    # TODO: Implement age-based cleanup
+    click.echo(f"{Colors.BLUE}Found {len(branches)} temporary branches{Colors.RESET}")
+    click.echo(f"Cleanup logic for branches older than {max_age_days} days - Coming soon!")
 
 
 if __name__ == "__main__":

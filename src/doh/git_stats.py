@@ -316,3 +316,143 @@ Auto-committed by DOH monitoring system.
 """
         
         return commit_title + commit_body
+
+    @staticmethod
+    def get_or_create_temp_branch(directory: Path, prefix: str = "doh-auto-commits") -> str:
+        """Get existing temp branch or create a new one"""
+        try:
+            # Check if we're already on a temp branch
+            current_branch = subprocess.run(
+                ['git', '-C', str(directory), 'branch', '--show-current'],
+                capture_output=True, text=True, check=True
+            ).stdout.strip()
+            
+            if current_branch.startswith(prefix):
+                return current_branch
+            
+            # Look for existing temp branches
+            result = subprocess.run(
+                ['git', '-C', str(directory), 'branch', '--list', f'{prefix}-*'],
+                capture_output=True, text=True, check=True
+            )
+            
+            existing_branches = [line.strip().replace('* ', '') for line in result.stdout.strip().split('\n') if line.strip()]
+            
+            if existing_branches:
+                # Use the most recent temp branch (last in alphabetical order due to timestamp)
+                latest_branch = sorted(existing_branches)[-1]
+                return latest_branch
+            
+            # Create new temp branch with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+            branch_name = f"{prefix}-{timestamp}"
+            
+            # Create and checkout new branch
+            subprocess.run(
+                ['git', '-C', str(directory), 'checkout', '-b', branch_name],
+                capture_output=True, check=True
+            )
+            
+            return branch_name
+            
+        except subprocess.CalledProcessError:
+            # Fallback to current branch if temp branch creation fails
+            return "main"  # or whatever the default branch is
+
+    @staticmethod
+    def switch_to_temp_branch(directory: Path, branch_name: str) -> bool:
+        """Switch to the specified temp branch"""
+        try:
+            subprocess.run(
+                ['git', '-C', str(directory), 'checkout', branch_name],
+                capture_output=True, check=True
+            )
+            return True
+        except subprocess.CalledProcessError:
+            return False
+
+    @staticmethod
+    def list_temp_branches(directory: Path, prefix: str = "doh-auto-commits") -> list:
+        """List all temp branches in the repository"""
+        try:
+            result = subprocess.run(
+                ['git', '-C', str(directory), 'branch', '--list', f'{prefix}-*'],
+                capture_output=True, text=True, check=True
+            )
+            
+            branches = []
+            for line in result.stdout.strip().split('\n'):
+                if line.strip():
+                    branch = line.strip().replace('* ', '')
+                    # Get commit count and last commit info
+                    try:
+                        commit_count = subprocess.run(
+                            ['git', '-C', str(directory), 'rev-list', '--count', branch],
+                            capture_output=True, text=True, check=True
+                        ).stdout.strip()
+                        
+                        last_commit = subprocess.run(
+                            ['git', '-C', str(directory), 'log', '-1', '--format=%cr', branch],
+                            capture_output=True, text=True, check=True
+                        ).stdout.strip()
+                        
+                        branches.append({
+                            'name': branch,
+                            'commit_count': int(commit_count),
+                            'last_commit': last_commit
+                        })
+                    except subprocess.CalledProcessError:
+                        branches.append({
+                            'name': branch,
+                            'commit_count': 0,
+                            'last_commit': 'unknown'
+                        })
+            
+            return branches
+            
+        except subprocess.CalledProcessError:
+            return []
+
+    @staticmethod
+    def squash_temp_commits(directory: Path, target_branch: str, commit_message: str, temp_branch: Optional[str] = None) -> bool:
+        """Squash temp branch commits into target branch with a proper commit message"""
+        try:
+            if not temp_branch:
+                # Find the current temp branch
+                current_branch = subprocess.run(
+                    ['git', '-C', str(directory), 'branch', '--show-current'],
+                    capture_output=True, text=True, check=True
+                ).stdout.strip()
+                
+                if not current_branch.startswith("doh-auto-commits"):
+                    return False
+                temp_branch = current_branch
+            
+            # Switch to target branch
+            subprocess.run(
+                ['git', '-C', str(directory), 'checkout', target_branch],
+                capture_output=True, check=True
+            )
+            
+            # Squash merge the temp branch
+            subprocess.run(
+                ['git', '-C', str(directory), 'merge', '--squash', temp_branch],
+                capture_output=True, check=True
+            )
+            
+            # Commit with the provided message
+            subprocess.run(
+                ['git', '-C', str(directory), 'commit', '-m', commit_message],
+                capture_output=True, check=True
+            )
+            
+            # Delete the temp branch
+            subprocess.run(
+                ['git', '-C', str(directory), 'branch', '-D', temp_branch],
+                capture_output=True, check=True
+            )
+            
+            return True
+            
+        except subprocess.CalledProcessError:
+            return False

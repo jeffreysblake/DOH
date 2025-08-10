@@ -46,7 +46,11 @@ class DohConfig:
                 "default_threshold": DEFAULT_THRESHOLD,
                 "git_profile": "",
                 "auto_init_git": True,
-                "git_init_command": "git init"
+                "git_init_command": "git init",
+                "use_temp_branches": True,
+                "temp_branch_prefix": "doh-auto-commits",
+                "auto_cleanup_temp_branches": True,
+                "max_temp_branch_age_days": 7
             },
             "directories": {},
             "exclusions": []
