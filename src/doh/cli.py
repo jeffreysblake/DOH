@@ -41,8 +41,10 @@ def _show_single_directory_status(directory: Path):
     
     if stats is None:
         status = f"{Colors.RED}NOT A GIT REPO{Colors.RESET}"
+        click.echo(f"  {Colors.BLUE}{name}{Colors.RESET}: {status}")
     elif not directory.exists():
         status = f"{Colors.RED}DIRECTORY NOT FOUND{Colors.RESET}"
+        click.echo(f"  {Colors.BLUE}{name}{Colors.RESET}: {status}")
     else:
         total_changes = stats['total_changes']
         untracked = stats['untracked']
@@ -55,9 +57,8 @@ def _show_single_directory_status(directory: Path):
             status = f"{Colors.RED}OVER THRESHOLD ({total_all}/{threshold}){Colors.RESET}"
         else:
             status = f"{Colors.YELLOW}HAS CHANGES ({total_all}/{threshold}){Colors.RESET}"
-    
-    click.echo(f"  {Colors.BLUE}{name}{Colors.RESET}: {status}")
-    if stats:
+        
+        click.echo(f"  {Colors.BLUE}{name}{Colors.RESET}: {status}")
         click.echo(f"    Changes: +{stats['added']} -{stats['deleted']} (files: {stats['files_changed']})")
         if stats['untracked'] > 0:
             click.echo(f"    Untracked: {stats['untracked']} files")

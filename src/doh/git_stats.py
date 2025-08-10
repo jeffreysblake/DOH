@@ -27,8 +27,10 @@ class GitStats:
             ).returncode == 0
             
             if not head_exists:
-                # New repository with no commits - only untracked files matter
+                # New repository with no commits - check for staged files too
                 file_stats = []
+                
+                # Add untracked files
                 for file_path, line_count in untracked_info.get('file_details', []):
                     file_stats.append({
                         'file': file_path,
@@ -37,11 +39,23 @@ class GitStats:
                         'status': 'new'
                     })
                 
+                # Check for staged files (new files ready to commit)
+                staged_info = GitStats._get_staged_new_files_info(directory)
+                for file_path, line_count in staged_info.get('file_details', []):
+                    file_stats.append({
+                        'file': file_path,
+                        'added': line_count,
+                        'deleted': 0,
+                        'status': 'new'
+                    })
+                
+                total_new_lines = untracked_info['line_count'] + staged_info['line_count']
+                
                 return {
-                    'total_changes': 0,
-                    'added': 0,
+                    'total_changes': staged_info['line_count'],  # Staged files count as changes
+                    'added': staged_info['line_count'],
                     'deleted': 0,
-                    'files_changed': 0,
+                    'files_changed': staged_info['file_count'],
                     'untracked': untracked_info['file_count'],
                     'untracked_lines': untracked_info['line_count'],
                     'file_stats': file_stats
@@ -153,6 +167,45 @@ class GitStats:
                     
             return {
                 'file_count': len(untracked_files), 
+                'line_count': total_lines,
+                'file_details': file_details
+            }
+        except subprocess.CalledProcessError:
+            return {'file_count': 0, 'line_count': 0, 'file_details': []}
+
+    @staticmethod
+    def _get_staged_new_files_info(directory: Path) -> dict:
+        """Get info about staged new files (files that are staged but not yet committed)"""
+        try:
+            # Get list of staged files
+            result = subprocess.run(
+                ['git', '-C', str(directory), 'diff', '--staged', '--name-only'],
+                capture_output=True, text=True, check=True
+            )
+            
+            staged_files = [line for line in result.stdout.strip().split('\n') if line]
+            if not staged_files:
+                return {'file_count': 0, 'line_count': 0, 'file_details': []}
+            
+            total_lines = 0
+            file_details = []
+            
+            for file_path in staged_files:
+                full_path = directory / file_path
+                try:
+                    # Only count text files, skip binary files
+                    with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = sum(1 for _ in f)
+                        total_lines += lines
+                        file_details.append((file_path, lines))
+                except (OSError, UnicodeDecodeError, PermissionError):
+                    # Skip files we can't read or binary files
+                    # But still count them as 1 line each so they're not ignored
+                    total_lines += 1
+                    file_details.append((file_path, 1))
+                    
+            return {
+                'file_count': len(staged_files), 
                 'line_count': total_lines,
                 'file_details': file_details
             }
