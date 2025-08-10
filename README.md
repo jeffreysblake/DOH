@@ -22,28 +22,64 @@ A smart auto-commit monitoring system for git repositories. DOH intelligently tr
 
 ## 🚀 Quick Start
 
-### Installation
+### Installation Options
 
-#### User-level Installation (Recommended)
+DOH can be installed in multiple ways to suit different needs:
+
+#### 1. Quick Install from PyPI (Recommended for end users)
+```bash
+# One-line install (when published to PyPI)
+curl -sSL https://raw.githubusercontent.com/youruser/doh/main/pip-install | bash
+
+# Or manually:
+pip3 install --user doh-monitor
+```
+
+#### 2. Install from Source (Recommended for development)
 ```bash
 # Clone and install for current user only (no sudo required)
 git clone <repository-url>
 cd doh
-./install
+
+# Validate package before installation (optional)
+./validate
+
+# Install from source (editable mode)
+./install --source
 
 # The script will:
-# - Install doh to ~/.local/bin (user-level)
+# - Install doh to ~/.local/bin (user-level, editable)
 # - Set up systemd user daemon (runs every 10 minutes)
 # - Provide instructions for adding ~/.local/bin to PATH
 ```
 
-#### Development Setup
+#### 3. Development Setup
 ```bash
 # Clone and set up for development
 git clone <repository-url>
 cd doh
 ./scripts/dev-setup
 source venv/bin/activate
+```
+
+#### 4. Alternative Installation Methods
+```bash
+# Force pip installation (even from source directory)
+./install --pip
+
+# Direct pip install (if published)
+pip3 install --user doh-monitor
+```
+
+#### Uninstallation
+```bash
+# Using uninstall script (handles both source and pip installations)
+./uninstall
+
+# Manual removal
+pip3 uninstall doh-monitor
+systemctl --user stop doh-monitor.timer
+systemctl --user disable doh-monitor.timer
 ```
 
 #### Manual PATH Setup (if needed)
@@ -57,9 +93,10 @@ source ~/.bashrc
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
-sudo ./scripts/systemd-setup    # Modern Linux (systemd) - runs every 10 minutes
-./scripts/cron-setup           # Universal (cron) - runs every 5 minutes
-```
+
+### Daemon Setup (Automatic)
+
+The installation script automatically sets up a user-level systemd daemon that runs every 10 minutes. No additional setup is required!
 
 ### Basic Usage
 
@@ -196,11 +233,15 @@ doh/
 │   └── test_doh.py      # Main test file
 ├── scripts/             # Setup and daemon scripts
 │   ├── dev-setup        # Development environment setup
-│   ├── systemd-setup    # Systemd daemon setup
+│   ├── systemd-setup    # Systemd daemon setup (DEPRECATED - use ./install)
 │   ├── cron-setup       # Cron daemon setup
 │   ├── doh-daemon@.service  # Systemd service template
 │   └── doh-daemon@.timer    # Systemd timer (10 minute intervals)
-├── install              # Main installation script
+├── install              # Smart installation script (source/pip auto-detection)
+├── uninstall            # Uninstallation script
+├── validate             # Package validation script
+├── pip-install          # Quick PyPI installation script
+├── build-release        # PyPI package builder and publisher
 ├── pyproject.toml       # Modern Python packaging
 └── README.md           # This file
 ```
@@ -267,22 +308,31 @@ When enabled, DOH will run `git init` automatically when you try to monitor a no
 
 ## 🤖 Daemon Setup
 
-### Systemd (Recommended for Linux)
+### User-level Systemd (Recommended and Automatic)
+
+The installation script automatically sets up a user-level systemd daemon:
 
 ```bash
-# Automatic setup during installation
-sudo ./install
+# Check daemon status
+systemctl --user status doh-monitor.timer
 
-# Manual setup if needed
-sudo ./scripts/systemd-setup
+# View daemon logs
+journalctl --user -u doh-monitor -f
 
-# Service management
-sudo systemctl status doh-daemon@$USER.timer
-sudo systemctl start doh-daemon@$USER.timer
-sudo systemctl enable doh-daemon@$USER.timer
+# Stop the daemon
+systemctl --user stop doh-monitor.timer
 
-# View logs
-journalctl -u doh-daemon@$USER -f
+# Start the daemon
+systemctl --user start doh-monitor.timer
+
+# Run daemon once manually (perfect for testing)
+doh daemon --once
+
+# Run daemon continuously with verbose output
+doh daemon --verbose
+
+# Check local daemon logs
+cat ~/.doh/logs/daemon_$(date +%Y-%m-%d).log
 ```
 
 **Note**: The systemd service runs every **10 minutes** to check all monitored directories. This prevents log spam while ensuring timely auto-commits.
@@ -359,11 +409,69 @@ DOH maintains comprehensive logs:
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make changes and test: `./scripts/dev-setup && source venv/bin/activate`
-4. Run tests: `python -m pytest tests/`
-5. Submit a pull request
+### Development Workflow
+
+1. **Fork and clone the repository**
+```bash
+git clone https://github.com/yourusername/doh.git
+cd doh
+```
+
+2. **Set up development environment**
+```bash
+./scripts/dev-setup
+source venv/bin/activate
+```
+
+3. **Install in editable mode**
+```bash
+./install --source
+```
+
+4. **Make changes and test**
+```bash
+# Validate package structure
+./validate
+
+# Run tests (if available)
+python -m pytest tests/
+
+# Test CLI functionality
+doh --help
+```
+
+5. **Build and test package**
+```bash
+# Build package locally
+./build-release --build
+
+# Test on TestPyPI (maintainers only)
+./build-release --test
+```
+
+### Publishing to PyPI
+
+For maintainers with PyPI access:
+
+```bash
+# Build and publish to TestPyPI first
+./build-release --test
+
+# Test installation from TestPyPI
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ doh-monitor
+
+# If everything works, publish to production PyPI
+./build-release --prod
+```
+
+### Installation Methods Summary
+
+| Method | Use Case | Command |
+|--------|----------|---------|
+| **PyPI Install** | End users, production use | `pip3 install --user doh-monitor` |
+| **Quick PyPI** | One-line install | `curl -sSL .../pip-install \| bash` |
+| **Source Install** | Development, customization | `./install --source` |
+| **Dev Setup** | Contributing, testing | `./scripts/dev-setup` |
 
 ## 📄 License
 

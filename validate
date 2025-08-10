@@ -1,0 +1,110 @@
+#!/bin/bash
+# Simple validation script to test DOH functionality before installation
+# This script verifies the package structure and basic functionality
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+print_step() {
+    echo -e "${BLUE}${BOLD}==> $1${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}✗ $1${NC}"
+    exit 1
+}
+
+print_step "Validating DOH package structure"
+
+# Check required files exist
+required_files=(
+    "src/doh/__init__.py"
+    "src/doh/cli.py"
+    "src/doh/core.py"
+    "src/doh/config.py"
+    "src/doh/git_stats.py"
+    "src/doh/colors.py"
+    "pyproject.toml"
+    "install"
+)
+
+for file in "${required_files[@]}"; do
+    if [[ -f "$file" ]]; then
+        print_success "Found $file"
+    else
+        print_error "Missing required file: $file"
+    fi
+done
+
+print_step "Checking Python imports"
+
+# Test if imports work
+if python3 -c "
+import sys
+sys.path.insert(0, 'src')
+try:
+    from doh import cli, core, config, git_stats, colors
+    print('All imports successful')
+except ImportError as e:
+    print(f'Import error: {e}')
+    sys.exit(1)
+"; then
+    print_success "All Python imports work correctly"
+else
+    print_error "Python import validation failed"
+fi
+
+print_step "Checking package configuration"
+
+# Validate pyproject.toml has required sections
+if python3 -c "
+import tomllib if 'tomllib' in dir() else tomli as tomllib
+with open('pyproject.toml', 'rb') as f:
+    config = tomllib.load(f)
+    assert 'project' in config
+    assert 'project.scripts' in config
+    assert config['project']['scripts']['doh'] == 'doh.cli:main'
+    print('Package configuration is valid')
+" 2>/dev/null; then
+    print_success "Package configuration is valid"
+else
+    # Fallback for older Python versions without tomllib
+    if grep -q 'doh = "doh.cli:main"' pyproject.toml; then
+        print_success "Package configuration appears valid"
+    else
+        print_error "Package configuration validation failed"
+    fi
+fi
+
+print_step "Checking install script"
+
+if [[ -x "install" ]]; then
+    print_success "Install script is executable"
+else
+    print_error "Install script is not executable - run: chmod +x install"
+fi
+
+print_step "Checking deprecated scripts"
+
+if grep -q "deprecated" scripts/systemd-setup 2>/dev/null; then
+    print_success "systemd-setup script is properly deprecated"
+else
+    print_error "systemd-setup script should be deprecated"
+fi
+
+echo
+echo -e "${GREEN}${BOLD}✅ All validation checks passed!${NC}"
+echo
+echo "The DOH package is ready for installation."
+echo "Run './install' to install DOH as a user-level package."
