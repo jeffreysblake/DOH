@@ -1,17 +1,11 @@
 #!/bin/bash
-# DOH Installation Script
-# Installs doh as a user-level Python package
-# Supports both source installation and pip installation
+# DOH Development Installation Script
+# Installs doh from source for development (editable mode)
 
 set -e
 
 # Configuration - User-level paths
 LOCAL_BIN="$HOME/.local/bin"
-SCRIPT_PATH="$LOCAL_BIN/doh"
-
-# Installation modes
-INSTALL_FROM_SOURCE=false
-INSTALL_FROM_PIP=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -39,67 +33,16 @@ print_error() {
 }
 
 show_usage() {
-    echo "DOH Installation Script"
+    echo "DOH Development Installation Script"
     echo
     echo "Usage:"
     echo "  $0 [OPTIONS]"
     echo
     echo "Options:"
-    echo "  --source      Install from source (default when run from git repo)"
-    echo "  --pip         Install from PyPI using pip"
     echo "  --help, -h    Show this help message"
     echo
-    echo "Examples:"
-    echo "  $0             # Auto-detect installation method"
-    echo "  $0 --source   # Force source installation"
-    echo "  $0 --pip      # Install from PyPI"
-}
-
-parse_arguments() {
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --source)
-                INSTALL_FROM_SOURCE=true
-                shift
-                ;;
-            --pip)
-                INSTALL_FROM_PIP=true
-                shift
-                ;;
-            --help|-h)
-                show_usage
-                exit 0
-                ;;
-            *)
-                print_error "Unknown option: $1. Use --help for usage information."
-                ;;
-        esac
-    done
-}
-
-detect_installation_method() {
-    # If both flags are set, that's an error
-    if [[ "$INSTALL_FROM_SOURCE" == "true" && "$INSTALL_FROM_PIP" == "true" ]]; then
-        print_error "Cannot specify both --source and --pip options"
-    fi
-    
-    # If neither flag is set, auto-detect
-    if [[ "$INSTALL_FROM_SOURCE" == "false" && "$INSTALL_FROM_PIP" == "false" ]]; then
-        # Check if we're in a git repository with the expected structure
-        if [[ -f "pyproject.toml" && -d "src/doh" && -f "src/doh/cli.py" ]]; then
-            INSTALL_FROM_SOURCE=true
-            print_step "Auto-detected source installation (found pyproject.toml and src/)"
-        else
-            INSTALL_FROM_PIP=true
-            print_step "Auto-detected pip installation (not in source directory)"
-        fi
-    fi
-    
-    if [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
-        print_step "Installing from source"
-    else
-        print_step "Installing from PyPI"
-    fi
+    echo "This script installs DOH from source in editable mode for development."
+    echo "For end users, use: pip install doh-monitor"
 }
 
 check_requirements() {
@@ -133,25 +76,19 @@ create_directories() {
 }
 
 install_package() {
-    print_step "Installing doh package (user-level)"
+    print_step "Installing doh package from source (editable mode)"
     
-    if [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
-        # Get the directory where this script is located (should be the project root)
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        
-        # Verify we have the source structure
-        if [[ ! -f "$SCRIPT_DIR/pyproject.toml" || ! -d "$SCRIPT_DIR/src/doh" ]]; then
-            print_error "Source installation requires pyproject.toml and src/doh/ directory"
-        fi
-        
-        # Install the package for the user only (editable mode for development)
-        pip3 install --user -e "$SCRIPT_DIR"
-        print_success "Package installed from source in editable mode"
-    else
-        # Install from PyPI
-        pip3 install --user doh-monitor
-        print_success "Package installed from PyPI"
+    # Get the directory where this script is located (should be the project root)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Verify we have the source structure
+    if [[ ! -f "$SCRIPT_DIR/pyproject.toml" || ! -d "$SCRIPT_DIR/src/doh" ]]; then
+        print_error "Source installation requires pyproject.toml and src/doh/ directory"
     fi
+    
+    # Install the package for the user only (editable mode for development)
+    pip3 install --user -e "$SCRIPT_DIR"
+    print_success "Package installed from source in editable mode"
 }
 
 check_path() {
@@ -187,7 +124,7 @@ setup_daemon() {
     
     # Check if systemd is available
     if ! command -v systemctl &> /dev/null; then
-        print_warning "systemd not available. You can manually set up cron later with: ./scripts/cron-setup"
+        print_warning "systemd not available. DOH will set up daemon on first run."
         return
     fi
     
@@ -249,12 +186,23 @@ test_installation() {
 }
 
 main() {
-    echo -e "${BOLD}DOH Installation Script${NC}"
-    echo "Installing DOH as a user-level Python package (no sudo required)"
+    echo -e "${BOLD}DOH Development Installation Script${NC}"
+    echo "Installing DOH from source for development (editable mode)"
     echo
     
-    parse_arguments "$@"
-    detect_installation_method
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --help|-h)
+                show_usage
+                exit 0
+                ;;
+            *)
+                print_error "Unknown option: $1. Use --help for usage information."
+                ;;
+        esac
+    done
+    
     check_requirements
     create_directories
     install_package
@@ -263,14 +211,10 @@ main() {
     setup_daemon
     
     echo
-    echo -e "${GREEN}${BOLD}Installation completed successfully!${NC}"
+    echo -e "${GREEN}${BOLD}Development installation completed successfully!${NC}"
     echo
-    if [[ "$INSTALL_FROM_SOURCE" == "true" ]]; then
-        echo "DOH installed from source in editable mode."
-        echo "Changes to the source code will be immediately available."
-    else
-        echo "DOH installed from PyPI."
-    fi
+    echo "DOH installed from source in editable mode."
+    echo "Changes to the source code will be immediately available."
     echo
     echo "You can now use 'doh' from anywhere (if ~/.local/bin is in PATH):"
     echo "  doh --help"
@@ -279,21 +223,17 @@ main() {
     echo
     echo "Configuration will be stored in ~/.doh/"
     echo
-    echo -e "${GREEN}${BOLD}User daemon is now running and monitoring every 10 minutes!${NC}"
-    echo "The daemon will automatically start when you log in."
-    echo
-    echo "To check daemon status:"
-    echo "  systemctl --user status doh-monitor.timer"
-    echo
-    echo "To view daemon logs:"
-    echo "  journalctl --user -u doh-monitor -f"
-    echo
-    echo "To stop the daemon:"
-    echo "  systemctl --user stop doh-monitor.timer"
+    if command -v systemctl &> /dev/null; then
+        echo -e "${GREEN}${BOLD}User daemon is now running and monitoring every 10 minutes!${NC}"
+        echo
+        echo "To check daemon status:"
+        echo "  systemctl --user status doh-monitor.timer"
+    else
+        echo "Systemd not available - daemon will be set up on first 'doh' run."
+    fi
     echo
     echo "To uninstall:"
-    echo "  ./uninstall  # (if available)"
-    echo "  # or manually: pip3 uninstall doh-monitor"
+    echo "  pip3 uninstall doh-monitor"
 }
 
 # Handle Ctrl+C gracefully

@@ -4,7 +4,23 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A smart auto-commit monitoring system for git repositories. DOH intelligently tracks changes in your directories and automatically commits when thresholds are exceeded, with support for both systemd and cron-based monitoring.
+A smart auto-commit monitoring system for git repositories. DOH intelligently tracks changes in ### Installation Methods Summary
+
+| Method | Use Case | Command |
+|--------|----------|---------|
+| **PyPI Install** | End users, production use | `pip3 install --user doh-monitor` |
+| **Source Install** | Development, customization | `./install` |
+| **Dev Setup** | Contributing, testing | `./scripts/dev-setup` |
+
+### First-Run Setup
+
+DOH automatically handles setup on first use:
+- ✅ Creates `~/.doh/` configuration directory
+- ✅ Sets up systemd user daemon (if available)
+- ✅ Starts 10-minute monitoring timer
+- ✅ No manual configuration needed!
+
+## 🔧 Configurationctories and automatically commits when thresholds are exceeded, with support for both systemd and cron-based monitoring.
 
 ## ✨ Features
 
@@ -24,20 +40,21 @@ A smart auto-commit monitoring system for git repositories. DOH intelligently tr
 
 ### Installation Options
 
-DOH can be installed in multiple ways to suit different needs:
-
-#### 1. Quick Install from PyPI (Recommended for end users)
+#### 1. Install from PyPI (Recommended for end users)
 ```bash
-# One-line install (when published to PyPI)
-curl -sSL https://raw.githubusercontent.com/youruser/doh/main/pip-install | bash
-
-# Or manually:
+# Standard pip installation
 pip3 install --user doh-monitor
+
+# Ensure ~/.local/bin is in your PATH
+export PATH="$HOME/.local/bin:$PATH"
+
+# First run will automatically set up daemon and config
+doh --help
 ```
 
-#### 2. Install from Source (Recommended for development)
+#### 2. Install from Source (For development)
 ```bash
-# Clone and install for current user only (no sudo required)
+# Clone and install for development
 git clone <repository-url>
 cd doh
 
@@ -45,7 +62,7 @@ cd doh
 ./validate
 
 # Install from source (editable mode)
-./install --source
+./install
 
 # The script will:
 # - Install doh to ~/.local/bin (user-level, editable)
@@ -53,33 +70,26 @@ cd doh
 # - Provide instructions for adding ~/.local/bin to PATH
 ```
 
-#### 3. Development Setup
+#### PATH Setup (if needed)
 ```bash
-# Clone and set up for development
-git clone <repository-url>
-cd doh
-./scripts/dev-setup
-source venv/bin/activate
-```
+# If ~/.local/bin is not in your PATH, add this to your shell profile:
+# For bash users:
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
 
-#### 4. Alternative Installation Methods
-```bash
-# Force pip installation (even from source directory)
-./install --pip
-
-# Direct pip install (if published)
-pip3 install --user doh-monitor
+# For zsh users:
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
 #### Uninstallation
 ```bash
-# Using uninstall script (handles both source and pip installations)
+# Using uninstall script (comprehensive cleanup)
 ./uninstall
 
-# Manual removal
+# Or manually:
 pip3 uninstall doh-monitor
-systemctl --user stop doh-monitor.timer
-systemctl --user disable doh-monitor.timer
+# Note: This leaves config and systemd files - clean up manually if desired
 ```
 
 #### Manual PATH Setup (if needed)
@@ -94,9 +104,14 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-### Daemon Setup (Automatic)
+### First Run
 
-The installation script automatically sets up a user-level systemd daemon that runs every 10 minutes. No additional setup is required!
+DOH automatically sets up everything on first use:
+- Creates configuration directory (`~/.doh/`)
+- Sets up systemd user daemon (if systemd is available)
+- Starts monitoring timer (runs every 10 minutes)
+
+No additional setup required!
 
 ### Basic Usage
 
@@ -237,11 +252,9 @@ doh/
 │   ├── cron-setup       # Cron daemon setup
 │   ├── doh-daemon@.service  # Systemd service template
 │   └── doh-daemon@.timer    # Systemd timer (10 minute intervals)
-├── install              # Smart installation script (source/pip auto-detection)
-├── uninstall            # Uninstallation script
+├── install              # Development installation script (source only)
+├── uninstall            # Comprehensive uninstallation script
 ├── validate             # Package validation script
-├── pip-install          # Quick PyPI installation script
-├── build-release        # PyPI package builder and publisher
 ├── pyproject.toml       # Modern Python packaging
 └── README.md           # This file
 ```

@@ -122,6 +122,9 @@ def main(ctx, force, threshold, name):
     
     When run without a command, adds current directory to monitoring (or shows status if already monitored).
     """
+    # First-run setup
+    doh.config.setup_first_run()
+    
     # Store context data for subcommands
     ctx.ensure_object(dict)
     ctx.obj['force'] = force

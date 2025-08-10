@@ -4,6 +4,8 @@ Configuration management for DOH
 
 import json
 import os
+import subprocess
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
@@ -104,3 +106,93 @@ class DohConfig:
             if backup1.exists():
                 backup1.replace(backup2)
             self.config_file.replace(backup1)
+    
+    def setup_first_run(self):
+        """Setup DOH for first run - create config and systemd daemon"""
+        try:
+            # Ensure config directory and basic config
+            self._ensure_config_dir()
+            if not self.config_file.exists():
+                self.save(self._get_default_config())
+            
+            # Setup systemd daemon if available
+            self._setup_systemd_daemon()
+            
+            return True
+        except Exception as e:
+            try:
+                click.echo(f"{Colors.YELLOW}Warning: First-run setup had issues: {e}{Colors.RESET}")
+            except:
+                print(f"Warning: First-run setup had issues: {e}")
+            return False
+    
+    def _setup_systemd_daemon(self):
+        """Setup user-level systemd daemon for DOH monitoring"""
+        # Check if systemctl is available
+        if not shutil.which('systemctl'):
+            return False
+            
+        try:
+            # Create systemd user directory
+            systemd_dir = Path.home() / ".config" / "systemd" / "user"
+            systemd_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Find doh executable path
+            doh_path = shutil.which('doh')
+            if not doh_path:
+                # Try ~/.local/bin/doh
+                local_doh = Path.home() / ".local" / "bin" / "doh"
+                if local_doh.exists():
+                    doh_path = str(local_doh)
+                else:
+                    return False
+            
+            # Create service file
+            service_content = f"""[Unit]
+Description=DOH Git Repository Monitor
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart={doh_path} daemon --once
+Environment=HOME={Path.home()}
+WorkingDirectory={Path.home()}
+
+[Install]
+WantedBy=default.target
+"""
+            
+            # Create timer file
+            timer_content = """[Unit]
+Description=Run DOH Git Repository Monitor every 10 minutes
+Requires=doh-monitor.service
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+"""
+            
+            service_file = systemd_dir / "doh-monitor.service"
+            timer_file = systemd_dir / "doh-monitor.timer"
+            
+            # Write files only if they don't exist
+            if not service_file.exists():
+                service_file.write_text(service_content)
+            if not timer_file.exists():
+                timer_file.write_text(timer_content)
+            
+            # Reload systemd and enable/start timer
+            subprocess.run(['systemctl', '--user', 'daemon-reload'], 
+                         check=False, capture_output=True)
+            subprocess.run(['systemctl', '--user', 'enable', 'doh-monitor.timer'], 
+                         check=False, capture_output=True)
+            subprocess.run(['systemctl', '--user', 'start', 'doh-monitor.timer'], 
+                         check=False, capture_output=True)
+            
+            return True
+            
+        except Exception:
+            return False

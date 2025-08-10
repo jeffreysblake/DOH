@@ -1,0 +1,30 @@
+#!/bin/bash
+# Simple build script for DOH PyPI package
+
+set -e
+
+echo "Building DOH package for PyPI..."
+
+# Clean previous builds
+rm -rf dist/ build/ src/*.egg-info/
+
+# Check if build tools are available
+if ! python3 -c "import build" &> /dev/null; then
+    echo "Installing build tools..."
+    pip3 install --user build twine
+fi
+
+# Build the package
+echo "Building package..."
+python3 -m build
+
+echo "Package built successfully!"
+echo "Built files:"
+ls -la dist/
+
+echo ""
+echo "To upload to TestPyPI:"
+echo "  python3 -m twine upload --repository testpypi dist/*"
+echo ""
+echo "To upload to PyPI:"
+echo "  python3 -m twine upload dist/*"
