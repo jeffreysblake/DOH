@@ -1,103 +1,14 @@
 #!/bin/bash
-# systemd-setup.sh - Set up DOH daemon as a systemd service
+# systemd-setup.sh - DEPRECATED
+# This script is no longer needed. The ./install script now handles
+# user-level systemd daemon setup automatically.
 
-set -e
-
-USER_NAME="${SUDO_USER:-$USER}"
-SERVICE_NAME="doh-daemon@${USER_NAME}.service"
-TIMER_NAME="doh-daemon@${USER_NAME}.timer"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_SERVICE_FILE="$SCRIPT_DIR/doh-daemon@.service"
-SOURCE_TIMER_FILE="$SCRIPT_DIR/doh-daemon@.timer"
-SERVICE_FILE="/etc/systemd/system/doh-daemon@.service"
-TIMER_FILE="/etc/systemd/system/doh-daemon@.timer"
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-print_step() {
-    echo -e "${BLUE}${BOLD}==> $1${NC}"
-}
-
-print_success() {
-    echo -e "${GREEN}✓ $1${NC}"
-}
-
-print_warning() {
-    echo -e "${YELLOW}⚠ $1${NC}"
-}
-
-print_error() {
-    echo -e "${RED}✗ $1${NC}"
-    exit 1
-}
-
-print_info() {
-    echo -e "${YELLOW}ℹ $1${NC}"
-}
-
-main() {
-    echo -e "${BOLD}DOH Systemd Service Setup${NC}"
-    echo "Setting up DOH daemon as a systemd service for user: $USER_NAME"
-    echo
-    
-    # Check if running as root
-    if [[ $EUID -ne 0 ]]; then
-        print_error "This script must be run as root or with sudo"
-    fi
-    
-    # Check if doh is installed
-    if ! command -v doh &> /dev/null; then
-        print_error "DOH is not installed. Please run 'sudo ./install.sh' first"
-    fi
-    
-    # Check if systemd is available
-    if ! command -v systemctl &> /dev/null; then
-        print_error "systemd is not available on this system. Use scripts/cron-setup instead"
-    fi
-    
-    print_step "Installing systemd service and timer files"
-    
-    # Copy service file
-    if [[ ! -f "$SOURCE_SERVICE_FILE" ]]; then
-        print_error "Service file '$SOURCE_SERVICE_FILE' not found"
-    fi
-    
-    # Copy timer file
-    if [[ ! -f "$SOURCE_TIMER_FILE" ]]; then
-        print_error "Timer file '$SOURCE_TIMER_FILE' not found"
-    fi
-    
-    cp "$SOURCE_SERVICE_FILE" "$SERVICE_FILE"
-    cp "$SOURCE_TIMER_FILE" "$TIMER_FILE"
-    print_success "Service and timer files installed"
-    
-    print_step "Configuring systemd service and timer"
-    
-    # Reload systemd
-    systemctl daemon-reload
-    print_success "Systemd configuration reloaded"
-    
-    # Test the service configuration
-    if systemctl cat "$SERVICE_NAME" &> /dev/null; then
-        print_success "Service configuration valid"
-    else
-        print_error "Service configuration invalid"
-    fi
-    
-    # Test the timer configuration
-    if systemctl cat "$TIMER_NAME" &> /dev/null; then
-        print_success "Timer configuration valid"
-    else
-        print_error "Timer configuration invalid"
-    fi
-    
-    print_step "Testing service (dry run)"
+echo "⚠️  This script is deprecated."
+echo "The main ./install script now handles user-level systemd setup automatically."
+echo "Please run ./install from the project root instead."
+echo
+echo "For manual user-level systemd setup, see the installation script source."
+exit 1
     
     # Test daemon once as the user
     if sudo -u "$USER_NAME" doh daemon --once --verbose; then

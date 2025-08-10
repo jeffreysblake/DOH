@@ -1,14 +1,12 @@
 #!/bin/bash
 # DOH Installation Script
-# Installs doh as a system-wide Python package like professional CLI tools
+# Installs doh as a user-level Python package
 
 set -e
 
-# Configuration
-INSTALL_DIR="/usr/local/lib/doh"
-BIN_DIR="/usr/local/bin"
-VENV_DIR="$INSTALL_DIR/venv"
-SCRIPT_PATH="$BIN_DIR/doh"
+# Configuration - User-level paths
+LOCAL_BIN="$HOME/.local/bin"
+SCRIPT_PATH="$LOCAL_BIN/doh"
 
 # Colors for output
 RED='\033[0;31m'
@@ -38,11 +36,6 @@ print_error() {
 check_requirements() {
     print_step "Checking requirements"
     
-    # Check if running as root or with sudo
-    if [[ $EUID -ne 0 ]]; then
-        print_error "This script must be run as root or with sudo"
-    fi
-    
     # Check for Python 3
     if ! command -v python3 &> /dev/null; then
         print_error "Python 3 is required but not installed"
@@ -58,11 +51,60 @@ check_requirements() {
         print_error "git is required but not installed"
     fi
     
-    print_success "doh command is working correctly"
+    print_success "All requirements met"
+}
+
+create_directories() {
+    print_step "Creating user directories"
+    
+    # Create user's local bin directory
+    mkdir -p "$LOCAL_BIN"
+    
+    print_success "Created directories"
+}
+
+install_package() {
+    print_step "Installing doh package (user-level)"
+    
+    # Get the directory where this script is located (should be the project root)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Install the package for the user only
+    pip3 install --user -e "$SCRIPT_DIR"
+    
+    print_success "Package installed in user space"
+}
+
+check_path() {
+    print_step "Checking PATH configuration"
+    
+    # Check if ~/.local/bin is in PATH
+    if [[ ":$PATH:" == *":$LOCAL_BIN:"* ]]; then
+        print_success "~/.local/bin is already in PATH"
+        return
+    fi
+    
+    print_warning "~/.local/bin is not in your PATH"
+    echo
+    echo "To use 'doh' from anywhere, add this line to your shell profile:"
+    echo
+    
+    # Detect shell and suggest appropriate file
+    if [[ "$SHELL" == *"zsh"* ]]; then
+        echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc"
+        echo "  source ~/.zshrc"
+    elif [[ "$SHELL" == *"bash"* ]]; then
+        echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
+        echo "  source ~/.bashrc"
+    else
+        echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+        echo "  (Add this to your shell's configuration file)"
+    fi
+    echo
 }
 
 setup_daemon() {
-    print_step "Setting up systemd daemon"
+    print_step "Setting up user-level systemd daemon"
     
     # Get the directory where this script is located
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -73,130 +115,101 @@ setup_daemon() {
         return
     fi
     
-    # Call the systemd setup script
-    if [[ -f "$SCRIPT_DIR/scripts/systemd-setup" ]]; then
-        print_success "Running systemd setup..."
-        "$SCRIPT_DIR/scripts/systemd-setup"
-    else
-        print_warning "Systemd setup script not found. You can run it later with: sudo ./scripts/systemd-setup"
-    fi
-}
+    # Create systemd user directory
+    USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
+    mkdir -p "$USER_SYSTEMD_DIR"
+    
+    # Create the service file
+    cat > "$USER_SYSTEMD_DIR/doh-monitor.service" << EOF
+[Unit]
+Description=DOH Git Repository Monitor
+After=graphical-session.target
 
-create_directories() {
-    print_step "Creating installation directories"
-    
-    # Create installation directory
-    mkdir -p "$INSTALL_DIR"
-    mkdir -p "$BIN_DIR"
-    
-    print_success "Created directories"
-}
+[Service]
+Type=oneshot
+ExecStart=$LOCAL_BIN/doh daemon --once
+Environment=HOME=$HOME
+WorkingDirectory=$HOME
 
-setup_virtual_environment() {
-    print_step "Setting up virtual environment"
-    
-    # Remove existing venv if it exists
-    if [[ -d "$VENV_DIR" ]]; then
-        rm -rf "$VENV_DIR"
-    fi
-    
-    # Create new virtual environment
-    python3 -m venv "$VENV_DIR"
-    
-    # Upgrade pip in the venv
-    "$VENV_DIR/bin/pip" install --upgrade pip
-    
-    print_success "Virtual environment created"
-}
-
-install_package() {
-    print_step "Installing doh package"
-    
-    # Get the directory where this script is located (should be the project root)
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    
-    # Install the package in development mode so it can be updated easily
-    "$VENV_DIR/bin/pip" install -e "$SCRIPT_DIR"
-    
-    print_success "Package installed"
-}
-
-create_system_script() {
-    print_step "Creating system-wide doh command"
-    
-    # Create the wrapper script
-    cat > "$SCRIPT_PATH" << 'EOF'
-#!/bin/bash
-# DOH - System wrapper script
-# This script activates the virtual environment and runs the doh CLI
-
-VENV_DIR="/usr/local/lib/doh/venv"
-
-# Check if virtual environment exists
-if [[ ! -f "$VENV_DIR/bin/python" ]]; then
-    echo "Error: DOH virtual environment not found at $VENV_DIR"
-    echo "Please reinstall doh using the install script"
-    exit 1
-fi
-
-# Run doh with the virtual environment's Python
-exec "$VENV_DIR/bin/python" -m doh.cli "$@"
+[Install]
+WantedBy=default.target
 EOF
     
-    # Make the script executable
-    chmod +x "$SCRIPT_PATH"
+    # Create the timer file
+    cat > "$USER_SYSTEMD_DIR/doh-monitor.timer" << EOF
+[Unit]
+Description=Run DOH Git Repository Monitor every 10 minutes
+Requires=doh-monitor.service
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
     
-    print_success "System script created at $SCRIPT_PATH"
+    # Reload user systemd
+    systemctl --user daemon-reload
+    
+    # Enable and start the timer
+    systemctl --user enable doh-monitor.timer
+    systemctl --user start doh-monitor.timer
+    
+    print_success "User-level daemon configured and started"
 }
 
 test_installation() {
     print_step "Testing installation"
     
     # Test if the command works
-    if "$SCRIPT_PATH" --version &> /dev/null; then
+    if "$LOCAL_BIN/doh" --version &> /dev/null; then
         print_success "Installation test passed"
+    elif command -v doh &> /dev/null; then
+        print_success "Installation test passed (doh in PATH)"
     else
-        print_error "Installation test failed"
+        print_warning "Command 'doh' not found in PATH. Make sure ~/.local/bin is in your PATH"
     fi
 }
 
 main() {
-    echo -e "${BOLD}DOH Installation Script${NC}"
-    echo "Installing DOH as a system-wide Python package"
+    echo -e "${BOLD}DOH User-Level Installation Script${NC}"
+    echo "Installing DOH as a user-level Python package (no sudo required)"
     echo
     
     check_requirements
     create_directories
-    setup_virtual_environment
     install_package
-    create_system_script
+    check_path
     test_installation
     setup_daemon
     
     echo
     echo -e "${GREEN}${BOLD}Installation completed successfully!${NC}"
     echo
-    echo "You can now use 'doh' from anywhere:"
+    echo "You can now use 'doh' from anywhere (if ~/.local/bin is in PATH):"
     echo "  doh --help"
     echo "  doh add"
     echo "  doh status"
     echo
     echo "Configuration will be stored in ~/.doh/"
     echo
-    echo -e "${GREEN}${BOLD}Daemon is now running and monitoring every 10 minutes!${NC}"
-    echo "The daemon will automatically start on system boot."
+    echo -e "${GREEN}${BOLD}User daemon is now running and monitoring every 10 minutes!${NC}"
+    echo "The daemon will automatically start when you log in."
     echo
     echo "To check daemon status:"
-    echo "  sudo systemctl status doh-daemon@$SUDO_USER.timer"
+    echo "  systemctl --user status doh-monitor.timer"
     echo
     echo "To view daemon logs:"
-    echo "  sudo journalctl -u doh-daemon@$SUDO_USER -f"
+    echo "  journalctl --user -u doh-monitor -f"
+    echo
+    echo "To stop the daemon:"
+    echo "  systemctl --user stop doh-monitor.timer"
     echo
     echo "To uninstall:"
-    echo "  sudo rm -rf $INSTALL_DIR"
-    echo "  sudo rm -f $SCRIPT_PATH"
-    echo "  sudo systemctl disable doh-daemon@$SUDO_USER.timer"
-    echo "  sudo rm -f /etc/systemd/system/doh-daemon@.*"
+    echo "  pip3 uninstall doh"
+    echo "  systemctl --user disable doh-monitor.timer"
+    echo "  rm -f ~/.config/systemd/user/doh-monitor.*"
 }
 
 # Handle Ctrl+C gracefully

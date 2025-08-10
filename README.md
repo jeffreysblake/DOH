@@ -22,18 +22,19 @@ A smart auto-commit monitoring system for git repositories. DOH intelligently tr
 
 ## 🚀 Quick Start
 
-### Installation Options
+### Installation
 
-#### System-wide Installation (Recommended)
+#### User-level Installation (Recommended)
 ```bash
-# Clone and install with automatic daemon setup
+# Clone and install for current user only (no sudo required)
 git clone <repository-url>
 cd doh
-sudo ./install
+./install
 
-# Start monitoring (if systemd is available)
-sudo systemctl start doh-daemon@$USER.timer
-sudo systemctl enable doh-daemon@$USER.timer
+# The script will:
+# - Install doh to ~/.local/bin (user-level)
+# - Set up systemd user daemon (runs every 10 minutes)
+# - Provide instructions for adding ~/.local/bin to PATH
 ```
 
 #### Development Setup
@@ -45,9 +46,17 @@ cd doh
 source venv/bin/activate
 ```
 
-#### Manual Daemon Setup (if needed)
+#### Manual PATH Setup (if needed)
 ```bash
-# If you need to set up daemon manually or use cron instead
+# If ~/.local/bin is not in your PATH, add this to your shell profile:
+# For bash users:
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# For zsh users:
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
 sudo ./scripts/systemd-setup    # Modern Linux (systemd) - runs every 10 minutes
 ./scripts/cron-setup           # Universal (cron) - runs every 5 minutes
 ```
@@ -80,13 +89,25 @@ doh config
 ### Daemon Management
 
 ```bash
-# Run daemon once (perfect for cron)
+# Check daemon status
+systemctl --user status doh-monitor.timer
+
+# View daemon logs
+journalctl --user -u doh-monitor -f
+
+# Stop the daemon
+systemctl --user stop doh-monitor.timer
+
+# Start the daemon
+systemctl --user start doh-monitor.timer
+
+# Run daemon once manually (perfect for cron)
 doh daemon --once
 
 # Run daemon continuously with verbose output
 doh daemon --verbose
 
-# Check daemon logs
+# Check local daemon logs
 cat ~/.doh/logs/daemon_$(date +%Y-%m-%d).log
 ```
 
