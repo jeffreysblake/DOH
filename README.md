@@ -2,54 +2,173 @@
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A smart auto-commit monitoring system for git repositories. DOH intelligently tracks changes in ### Installation Methods Summary
+**Stop forgetting to commit your work!** DOH automatically monitors your git repositories and commits changes when they pile up, so you never lose progress again.
 
-| Method | Use Case | Command |
-|--------|----------|---------|
-| **PyPI Install** | End users, production use | `pip3 install --user doh-monitor` |
-| **Source Install** | Development, customization | `./install` |
-| **Dev Setup** | Contributing, testing | `./scripts/dev-setup` |
+## Why DOH?
 
-### First-Run Setup
+- 🎯 **Never lose work**: Automatic commits when you have too many uncommitted changes
+- 🤖 **Set and forget**: Background monitoring every 10 minutes  
+- 📊 **Smart thresholds**: Configure how many lines of changes trigger auto-commits
+- 🚫 **Flexible**: Exclude directories you don't want monitored
+- ⚡ **Zero maintenance**: Works silently in the background
 
-DOH automatically handles setup on first use:
-- ✅ Creates `~/.doh/` configuration directory
-- ✅ Sets up systemd user daemon (if available)
-- ✅ Starts 10-minute monitoring timer
-- ✅ No manual configuration needed!
+Perfect for developers who get into flow state and forget to commit for hours! 
 
-## 🔧 Configurationctories and automatically commits when thresholds are exceeded, with support for both systemd and cron-based monitoring.
+## Quick Start
 
-## ✨ Features
-
-- 🎯 **Smart monitoring**: Automatically tracks git repository changes
-- 🤖 **Auto-commit daemon**: Background monitoring with systemd or cron
-- 📊 **Configurable thresholds**: Set custom line-change limits per directory  
-- 🚫 **Exclusion system**: Exclude directories and their children from monitoring
-- 📈 **Detailed statistics**: View comprehensive git stats with progress indicators
-- 🎨 **Beautiful CLI**: Colorful, intuitive command-line interface
-- ⚡ **Fast & reliable**: Pure Python implementation with proper error handling
-- 💾 **Configuration backup**: Automatic backup system prevents data loss
-- 🐳 **Docker-like naming**: Friendly names for monitored directories
-- � **Git profile support**: Use custom git configurations for commits
-- 🔄 **Force commit**: Instantly commit changes with `-f` flag
-
-## 🚀 Quick Start
-
-### Installation Options
-
-#### 1. Install from PyPI (Recommended for end users)
+### Install
 ```bash
-# Standard pip installation
+pip3 install --user doh-monitor
+```
+
+### Add a project to monitoring
+```bash
+cd /path/to/your/project
+doh --threshold 50  # Auto-commit when 50+ lines change
+```
+
+That's it! DOH now monitors this directory and will auto-commit when changes exceed 50 lines.
+
+### Check what's being monitored
+```bash
+doh status
+```
+
+## Common Use Cases
+
+### Protect work in progress
+```bash
+# Monitor current project with 30-line threshold
+doh --threshold 30 --name "My Important Project"
+```
+
+### Monitor multiple projects
+```bash
+# Add different projects with different thresholds
+cd ~/work/api-server
+doh --threshold 100
+
+cd ~/personal/website  
+doh --threshold 25
+```
+
+### Exclude temporary directories
+```bash
+# Don't monitor build/temp directories
+doh ex add /path/to/build
+doh ex add /path/to/node_modules
+```
+
+## All Commands
+
+| Command | What it does |
+|---------|-------------|
+| `doh` | Add current directory to monitoring |
+| `doh status` | Show all monitored directories and their status |
+| `doh list` | List monitored directories |
+| `doh remove` | Remove current directory from monitoring |
+| `doh ex add` | Exclude a directory from monitoring |
+| `doh ex list` | Show excluded directories |
+
+## Configuration
+
+DOH stores settings in `~/.doh/config.json`. You can:
+
+- Set default threshold: `doh configure --threshold 75`
+- Use custom git profile: `doh configure --git-profile ~/.gitconfig-work`
+- Enable auto-git-init: `doh configure --auto-init-git`
+
+## How It Works
+
+1. **Monitor**: DOH checks your repositories every 10 minutes
+2. **Count**: Counts lines changed (staged + unstaged + untracked files)  
+3. **Commit**: When changes exceed your threshold, creates an auto-commit
+4. **Continue**: Keeps monitoring silently in the background
+
+Auto-commits have descriptive messages like: `"Auto-commit: 67 lines changed in MyProject"`
+
+## Advanced Options
+
+### Force commit before adding
+```bash
+doh -f --threshold 50  # Commits any existing changes first
+```
+
+### Custom git profile
+```bash
+# Use different git config for auto-commits
+doh configure --git-profile ~/.gitconfig-personal
+```
+
+### Manual daemon control
+```bash
+# Check daemon status
+systemctl --user status doh-monitor.timer
+
+# Stop monitoring temporarily  
+systemctl --user stop doh-monitor.timer
+
+# Restart monitoring
+systemctl --user start doh-monitor.timer
+```
+
+## Installation & Setup
+
+### Standard Installation
+```bash
 pip3 install --user doh-monitor
 
-# Ensure ~/.local/bin is in your PATH
-export PATH="$HOME/.local/bin:$PATH"
+# Make sure ~/.local/bin is in your PATH
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
 
-# First run will automatically set up daemon and config
-doh --help
+### Development Installation
+```bash
+git clone <repository-url>
+cd doh
+./install  # Installs in editable mode
+```
+
+### Uninstall
+```bash
+pip3 uninstall doh-monitor
+# Optional: Remove config and daemon
+rm -rf ~/.doh
+systemctl --user stop doh-monitor.timer
+systemctl --user disable doh-monitor.timer
+```
+
+## Troubleshooting
+
+**Command not found after install?**
+```bash
+# Add to PATH
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+**Daemon not running?**
+```bash
+# Check status
+systemctl --user status doh-monitor.timer
+# Or run once manually
+doh daemon --once
+```
+
+**Want to see what it's doing?**
+```bash
+# View logs
+journalctl --user -u doh-monitor -f
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+---
+
+**DOH - Because `git commit` shouldn't be an afterthought! 🎯**
 ```
 
 #### 2. Install from Source (For development)
