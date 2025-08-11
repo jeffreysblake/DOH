@@ -212,7 +212,7 @@ def add(ctx, directory, threshold, name):
     directory = directory.resolve()
     
     # Get force flag from context
-    force_commit = ctx.obj.get('force', False)
+    force_commit = ctx.obj.get('force', False) if ctx.obj else False
     
     # Smart behavior: if already monitored, show status instead
     if doh.is_monitored(directory):

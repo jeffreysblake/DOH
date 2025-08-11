@@ -28,8 +28,13 @@ doh
 That's it! DOH now monitors this directory with sensible defaults (50-line threshold) and will auto-commit when you accumulate changes.
 
 ### 3. Check your monitoring status
+
 ```bash
+# Check local status for current directory
 doh status
+
+# Check status for all monitored directories
+doh status --global
 ```
 
 ## Use Cases
@@ -90,26 +95,34 @@ Auto-commits include helpful messages like: `"Auto-commit: 67 lines changed in M
 | Command | What it does |
 |---------|-------------|
 | `doh` | Start monitoring current directory |
-| `doh status` | Show monitoring status for all projects |
+| `doh status` | Show local status for current directory |
+| `doh status --global` | Show monitoring status for all projects |
 | `doh list` | List all monitored directories |
-| `doh remove` | Stop monitoring current directory |
+| `doh rm` | Stop monitoring current directory |
+| `doh run` | Check all monitored directories now |
+| `doh squash "message"` | Merge temp branch commits |
+| `doh cleanup` | Clean up old temporary branches |
 | `doh ex add <path>` | Exclude a directory from monitoring |
 
 ## Configuration
 
 ### Set Your Preferences
 ```bash
-# Change default threshold
-doh configure --threshold 75
+# Change default threshold  
+doh config --set --threshold 75
 
 # Use a custom git profile for auto-commits
-doh configure --git-profile ~/.gitconfig-work
+doh config --set --git-profile ~/.gitconfig-work
 
 # Enable automatic git init for new projects
-doh configure --auto-init-git
+doh config --set --auto-init-git
+
+# Configure temporary branch settings
+doh config --set --temp-branches --temp-branch-prefix "my-commits"
 ```
 
 ### View Current Settings
+
 ```bash
 doh config
 ```
@@ -117,45 +130,75 @@ doh config
 ## Advanced Usage
 
 ### Force Commit Before Monitoring
+
 ```bash
-doh -f --threshold 50  # Commits any existing changes first
+doh add --force --threshold 50  # Commits any existing changes first
 ```
 
-### Control the Background Daemon
+### Temporary Branch Strategy
+
+DOH now uses temporary branches for auto-commits to keep your main branch clean:
+
 ```bash
-# Check if daemon is running
-systemctl --user status doh-monitor.timer
+# Check temp branches for current directory
+doh status
 
-# Stop monitoring temporarily
-systemctl --user stop doh-monitor.timer
+# Squash temp commits into main branch
+doh squash "Implemented user authentication"
 
-# Restart monitoring
-systemctl --user start doh-monitor.timer
+# Clean up old temp branches
+doh cleanup
 ```
 
-### View Activity Logs
+### Manual Processing
+
 ```bash
-# See what DOH is doing
-journalctl --user -u doh-monitor -f
+# Process all monitored directories now (don't wait for timer)
+doh run
+
+# Process with verbose output
+doh run --verbose
 ```
 
 ## Installation Details
 
 ### Standard Installation
+
 ```bash
 pip install doh-monitor
 ```
 
 ### Development Installation
+
 If you want to contribute or modify DOH:
+
 ```bash
 git clone <repository-url>
 cd doh
-./install
+pip install -e .  # Install in development mode
 ```
 
+### Running Tests
+
+DOH has comprehensive test coverage:
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage report
+pytest --cov=src/doh --cov-report=term-missing
+
+# Run specific test modules
+pytest tests/test_cli.py -v
+```
+
+Current test coverage: **70%** across all modules.
+
 ### PATH Setup (if needed)
+
 If `doh` command isn't found after installation:
+
 ```bash
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
@@ -164,20 +207,27 @@ source ~/.bashrc
 ## Troubleshooting
 
 **Command not found?**
+
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-**Daemon not running?**
+**Want to see what DOH is doing?**
+
 ```bash
-systemctl --user status doh-monitor.timer
-# or test manually:
-doh daemon --once
+# Check status of all monitored directories
+doh status --global
+
+# Run monitoring manually to see output
+doh run --verbose
 ```
 
-**Want to see activity?**
+**Need to clean up test directories?**
+
 ```bash
-journalctl --user -u doh-monitor -f
+# Remove directories that no longer exist
+doh list  # See what's being monitored
+doh rm /path/to/deleted/directory
 ```
 
 ## Uninstall

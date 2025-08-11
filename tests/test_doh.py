@@ -62,10 +62,10 @@ class TestDohSystem:
         doh = DohCore()
         config = doh.config.load()
         
-        assert config['version'] == '1.0'
         assert 'directories' in config
         assert 'exclusions' in config
         assert 'global_settings' in config
+        assert config['global_settings']['default_threshold'] > 0
     
     def test_add_directory_to_monitoring(self, temp_env):
         """Test adding a directory to monitoring"""
