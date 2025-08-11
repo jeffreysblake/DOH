@@ -240,7 +240,7 @@ def add(ctx, directory, threshold, name):
         click.echo(f"{Colors.RED}Failed to add directory{Colors.RESET}")
 
 
-@main.command()
+@main.command('rm')
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
                 required=False)
 def remove(directory):
@@ -402,7 +402,7 @@ def status():
             click.echo(f"  {Colors.GREEN}... and {len(clean) - 5} more{Colors.RESET}")
 
 
-@main.group()
+@main.group('ex')
 def exclusions():
     """Manage directory exclusions"""
     pass
@@ -428,7 +428,7 @@ def exclusions_add(directory):
         click.echo(f"{Colors.RED}Failed to add exclusion{Colors.RESET}")
 
 
-@exclusions.command('remove')
+@exclusions.command('rm')
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
                 required=False)
 def exclusions_remove(directory):
@@ -492,166 +492,109 @@ ex.add_command(exclusions_list, name='ls')    # Alias for list
 
 
 @main.command()
-def config():
-    """Show configuration file location and contents"""
-    click.echo(f"{Colors.BOLD}DOH Configuration:{Colors.RESET}")
-    click.echo(f"Config file: {doh.config.config_file}")
-    click.echo(f"Config dir: {doh.config.config_dir}")
-    click.echo()
-    
-    data = doh.config.load()
-    
-    directories = data.get('directories', {})
-    exclusions_dict = data.get('exclusions', {})
-    settings = data.get('global_settings', {})
-    
-    click.echo(f"Monitored directories: {len(directories)}")
-    click.echo(f"Excluded directories: {len(exclusions_dict)}")
-    click.echo(f"Default threshold: {settings.get('default_threshold', DEFAULT_THRESHOLD)}")
-    click.echo(f"Git profile: {settings.get('git_profile', 'None')}")
-    click.echo(f"Auto git init: {settings.get('auto_init_git', True)}")
-    click.echo(f"Use temp branches: {settings.get('use_temp_branches', True)}")
-    click.echo(f"Temp branch prefix: {settings.get('temp_branch_prefix', 'doh-auto-commits')}")
-    click.echo(f"Temp branch cleanup days: {settings.get('max_temp_branch_age_days', 7)}")
-    
-    if doh.config.config_file.exists():
-        size = doh.config.config_file.stat().st_size
-        click.echo(f"Config file size: {size} bytes")
-
-
-@main.command()
+@click.option('--set', is_flag=True, help='Enter configuration mode to change settings')
 @click.option('--git-profile', help='Path to git config file to use for commits (e.g., ~/.gitconfig-personal)')
 @click.option('--threshold', type=int, help='Set default threshold for new directories')
 @click.option('--auto-init-git/--no-auto-init-git', default=None, help='Enable/disable automatic git init for non-git directories')
 @click.option('--temp-branches/--no-temp-branches', default=None, help='Enable/disable temporary branch strategy')
 @click.option('--temp-branch-prefix', help='Set prefix for temporary branch names (default: doh-auto-commits)')
 @click.option('--temp-branch-cleanup-days', type=int, help='Days after which to clean up old temp branches (default: 7)')
-def configure(git_profile, threshold, auto_init_git, temp_branches, temp_branch_prefix, temp_branch_cleanup_days):
-    """Configure global DOH settings"""
-    data = doh.config.load()
-    settings = data.setdefault('global_settings', {})
+def config(set, git_profile, threshold, auto_init_git, temp_branches, temp_branch_prefix, temp_branch_cleanup_days):
+    """Show configuration or modify settings with --set"""
     
-    changed = False
-    
-    if git_profile is not None:
-        settings['git_profile'] = git_profile
-        changed = True
-        click.echo(f"{Colors.GREEN}✓ Git profile set to: {git_profile}{Colors.RESET}")
+    # If any configuration options are provided, go into configuration mode
+    if set or any([git_profile, threshold, auto_init_git is not None, temp_branches is not None, 
+                   temp_branch_prefix, temp_branch_cleanup_days]):
+        # Configuration mode
+        data = doh.config.load()
+        settings = data.setdefault('global_settings', {})
         
-        # Verify the profile exists
-        profile_path = Path(git_profile).expanduser()
-        if not profile_path.exists():
-            click.echo(f"{Colors.YELLOW}⚠ Warning: Git profile file does not exist: {profile_path}{Colors.RESET}")
-    
-    if threshold is not None:
-        settings['default_threshold'] = threshold
-        changed = True
-        click.echo(f"{Colors.GREEN}✓ Default threshold set to: {threshold}{Colors.RESET}")
-    
-    if auto_init_git is not None:
-        settings['auto_init_git'] = auto_init_git
-        changed = True
-        status = "enabled" if auto_init_git else "disabled"
-        click.echo(f"{Colors.GREEN}✓ Auto git init {status}{Colors.RESET}")
-    
-    if temp_branches is not None:
-        settings['use_temp_branches'] = temp_branches
-        changed = True
-        status = "enabled" if temp_branches else "disabled"
-        click.echo(f"{Colors.GREEN}✓ Temporary branch strategy {status}{Colors.RESET}")
-    
-    if temp_branch_prefix is not None:
-        settings['temp_branch_prefix'] = temp_branch_prefix
-        changed = True
-        click.echo(f"{Colors.GREEN}✓ Temporary branch prefix set to: {temp_branch_prefix}{Colors.RESET}")
-    
-    if temp_branch_cleanup_days is not None:
-        settings['max_temp_branch_age_days'] = temp_branch_cleanup_days
-        changed = True
-        click.echo(f"{Colors.GREEN}✓ Temporary branch cleanup age set to: {temp_branch_cleanup_days} days{Colors.RESET}")
-    
-    if not changed:
-        click.echo(f"{Colors.YELLOW}No changes specified. Use --help to see available options.{Colors.RESET}")
-        return
-    
-    if doh.config.save(data):
-        click.echo(f"{Colors.GREEN}Configuration saved successfully{Colors.RESET}")
+        changed = False
+        
+        if git_profile is not None:
+            settings['git_profile'] = git_profile
+            changed = True
+            click.echo(f"{Colors.GREEN}✓ Git profile set to: {git_profile}{Colors.RESET}")
+            
+            # Verify the profile exists
+            profile_path = Path(git_profile).expanduser()
+            if not profile_path.exists():
+                click.echo(f"{Colors.YELLOW}⚠ Warning: Git profile file does not exist: {profile_path}{Colors.RESET}")
+        
+        if threshold is not None:
+            settings['default_threshold'] = threshold
+            changed = True
+            click.echo(f"{Colors.GREEN}✓ Default threshold set to: {threshold}{Colors.RESET}")
+        
+        if auto_init_git is not None:
+            settings['auto_init_git'] = auto_init_git
+            changed = True
+            status = "enabled" if auto_init_git else "disabled"
+            click.echo(f"{Colors.GREEN}✓ Auto git init {status}{Colors.RESET}")
+        
+        if temp_branches is not None:
+            settings['use_temp_branches'] = temp_branches
+            changed = True
+            status = "enabled" if temp_branches else "disabled"
+            click.echo(f"{Colors.GREEN}✓ Temporary branch strategy {status}{Colors.RESET}")
+        
+        if temp_branch_prefix is not None:
+            settings['temp_branch_prefix'] = temp_branch_prefix
+            changed = True
+            click.echo(f"{Colors.GREEN}✓ Temporary branch prefix set to: {temp_branch_prefix}{Colors.RESET}")
+        
+        if temp_branch_cleanup_days is not None:
+            settings['max_temp_branch_age_days'] = temp_branch_cleanup_days
+            changed = True
+            click.echo(f"{Colors.GREEN}✓ Temporary branch cleanup age set to: {temp_branch_cleanup_days} days{Colors.RESET}")
+        
+        if not changed:
+            click.echo(f"{Colors.YELLOW}No changes specified. Use --help to see available options.{Colors.RESET}")
+            return
+        
+        if doh.config.save(data):
+            click.echo(f"{Colors.GREEN}Configuration saved successfully{Colors.RESET}")
+        else:
+            click.echo(f"{Colors.RED}Failed to save configuration{Colors.RESET}")
     else:
-        click.echo(f"{Colors.RED}Failed to save configuration{Colors.RESET}")
+        # Display mode (default behavior)
+        click.echo(f"{Colors.BOLD}DOH Configuration:{Colors.RESET}")
+        click.echo(f"Config file: {doh.config.config_file}")
+        click.echo(f"Config dir: {doh.config.config_dir}")
+        click.echo()
+        
+        data = doh.config.load()
+        
+        directories = data.get('directories', {})
+        exclusions_dict = data.get('exclusions', {})
+        settings = data.get('global_settings', {})
+        
+        click.echo(f"Monitored directories: {len(directories)}")
+        click.echo(f"Excluded directories: {len(exclusions_dict)}")
+        click.echo(f"Default threshold: {settings.get('default_threshold', DEFAULT_THRESHOLD)}")
+        click.echo(f"Git profile: {settings.get('git_profile', 'None')}")
+        click.echo(f"Auto git init: {settings.get('auto_init_git', True)}")
+        click.echo(f"Use temp branches: {settings.get('use_temp_branches', True)}")
+        click.echo(f"Temp branch prefix: {settings.get('temp_branch_prefix', 'doh-auto-commits')}")
+        click.echo(f"Temp branch cleanup days: {settings.get('max_temp_branch_age_days', 7)}")
+        
+        if doh.config.config_file.exists():
+            size = doh.config.config_file.stat().st_size
+            click.echo(f"Config file size: {size} bytes")
 
 
 @main.command()
-@click.option('--once', is_flag=True, help='Run once and exit (perfect for cron jobs)')
-@click.option('--verbose', '-v', is_flag=True, help='Verbose logging output')
-@click.option('--interval', '-i', default=600, type=int, help='Check interval in seconds (default: 600 = 10 minutes)')
-def daemon(once, verbose, interval):
-    """Monitor all directories and auto-commit when thresholds are exceeded
+@click.option('--verbose', '-v', is_flag=True, help='Verbose output')
+def run(verbose):
+    """Check all monitored directories and auto-commit if needed
     
-    This daemon checks all monitored directories for changes and automatically
-    commits when the change threshold is exceeded. Perfect for running as a 
-    cron job with --once flag.
+    This command checks all monitored directories for changes and automatically
+    commits when the change threshold is exceeded. Perfect for cron jobs.
     
     Examples:
-        doh daemon --once     # Run once (good for cron)
-        doh daemon -v         # Run continuously with verbose output
-        doh daemon --interval 300  # Check every 5 minutes
+        doh run           # Check all directories once
+        doh run -v        # Check with verbose output
     """
-    import time
-    import logging
-    import os
-    from datetime import datetime
-    
-    # Set up logging
-    log_dir = doh.config.config_dir / "logs"
-    log_dir.mkdir(exist_ok=True)
-    
-    log_file = log_dir / f"daemon_{datetime.now().strftime('%Y-%m-%d')}.log"
-    
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO if verbose else logging.WARNING,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler() if verbose else logging.NullHandler()
-        ]
-    )
-    
-    logger = logging.getLogger('doh-daemon')
-    
-    def should_log_threshold_status(directory: Path, total_changes: int, threshold: int) -> bool:
-        """Check if we should log threshold status to prevent spam"""
-        log_dir = Path.home() / '.doh' / 'logs'
-        log_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Check logs from last 10 days
-        from datetime import datetime, timedelta
-        cutoff_date = datetime.now() - timedelta(days=10)
-        
-        dir_str = str(directory)
-        status = "OVER" if total_changes >= threshold else "BELOW"
-        
-        # Look through recent log files
-        for log_file in log_dir.glob("daemon_*.log"):
-            try:
-                # Extract date from filename (daemon_YYYY-MM-DD.log)
-                date_str = log_file.stem.split('_', 1)[1]
-                log_date = datetime.strptime(date_str, '%Y-%m-%d')
-                
-                if log_date < cutoff_date:
-                    continue
-                    
-                # Check if this directory + status was already logged
-                with open(log_file, 'r') as f:
-                    for line in f:
-                        if dir_str in line and f"STATUS: {status}" in line:
-                            return False  # Already logged recently
-                            
-            except (ValueError, OSError):
-                continue  # Skip malformed log files
-        
-        return True  # Not found in recent logs, should log
-    
     def auto_commit_directory(directory: Path, stats: dict, threshold: int, name: str) -> bool:
         """Perform auto-commit for a directory"""
         try:
@@ -671,194 +614,104 @@ def daemon(once, verbose, interval):
                     git_cmd.extend(['-c', f'include.path={profile_path}'])
             
             # Handle temporary branch strategy
-            original_branch = None
-            temp_branch = None
-            
             if use_temp_branches:
                 try:
-                    # Get current branch
-                    result = subprocess.run(
-                        git_cmd + ['branch', '--show-current'],
-                        capture_output=True, text=True, check=True
-                    )
-                    original_branch = result.stdout.strip()
-                    
                     # Get or create temp branch
                     temp_branch = GitStats.get_or_create_temp_branch(directory, temp_branch_prefix)
                     
                     # Switch to temp branch if not already on it
-                    if original_branch != temp_branch:
+                    current_branch = subprocess.run(
+                        git_cmd + ['branch', '--show-current'],
+                        capture_output=True, text=True, check=True
+                    ).stdout.strip()
+                    
+                    if current_branch != temp_branch:
                         GitStats.switch_to_temp_branch(directory, temp_branch)
                         
                 except subprocess.CalledProcessError:
                     # Fallback to direct commits if temp branch fails
                     use_temp_branches = False
-                    logger.warning(f"Failed to create temp branch for {name}, falling back to direct commits")
+                    if verbose:
+                        click.echo(f"{Colors.YELLOW}⚠ Failed to create temp branch for {name}, using direct commits{Colors.RESET}")
             
             # Stage all changes
-            subprocess.run(
-                git_cmd + ['add', '.'],
-                capture_output=True, check=True
-            )
+            subprocess.run(git_cmd + ['add', '.'], capture_output=True, check=True)
             
             # Check if there's anything to commit
-            result = subprocess.run(
-                git_cmd + ['diff', '--staged', '--quiet'],
-                capture_output=True, check=False
-            )
+            result = subprocess.run(git_cmd + ['diff', '--staged', '--quiet'], capture_output=True, check=False)
             
             if result.returncode == 0:
                 # Nothing staged to commit
-                logger.info(f"No changes to commit in {name} ({directory})")
+                if verbose:
+                    click.echo(f"{Colors.YELLOW}• {name}: No changes to commit{Colors.RESET}")
                 return False
             
             # Use enhanced commit message format
             commit_msg = GitStats.create_enhanced_commit_message(name, stats, threshold)
             
             # Commit changes
-            subprocess.run(
-                git_cmd + ['commit', '-m', commit_msg],
-                capture_output=True, check=True
-            )
+            subprocess.run(git_cmd + ['commit', '-m', commit_msg], capture_output=True, check=True)
             
             # Create enhanced log message with file details
             file_summary = GitStats.format_file_changes(stats.get('file_stats', []), max_files=3)
             total_changes = stats['total_changes'] + stats.get('untracked_lines', stats['untracked'])
             
-            branch_info = f" (temp branch: {temp_branch})" if use_temp_branches else ""
-            logger.info(f"✓ Auto-commit successful in '{name}': {file_summary} ({total_changes} total changes){branch_info}")
-            
-            if verbose:
-                if use_temp_branches:
-                    click.echo(f"{Colors.GREEN}✓ Auto-committed '{name}' to temp branch '{temp_branch}': {file_summary}{Colors.RESET}")
-                else:
-                    click.echo(f"{Colors.GREEN}✓ Auto-committed '{name}': {file_summary}{Colors.RESET}")
+            if use_temp_branches:
+                temp_branch = GitStats.get_or_create_temp_branch(directory, temp_branch_prefix)
+                click.echo(f"{Colors.GREEN}✓ Auto-committed '{name}' to temp branch '{temp_branch}': {file_summary}{Colors.RESET}")
+            else:
+                click.echo(f"{Colors.GREEN}✓ Auto-committed '{name}': {file_summary}{Colors.RESET}")
             
             return True
             
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to commit changes in '{name}' ({directory}): {e}")
             if verbose:
                 click.echo(f"{Colors.RED}✗ Failed to commit '{name}': {e}{Colors.RESET}")
             return False
     
-    def cleanup_old_logs():
-        """Clean up logs older than 30 days"""
-        try:
-            retention_days = 30
-            import time
-            cutoff = time.time() - (retention_days * 24 * 60 * 60)
-            
-            for log_file_path in log_dir.glob("daemon_*.log"):
-                if log_file_path.stat().st_mtime < cutoff:
-                    log_file_path.unlink()
-                    logger.info(f"Cleaned up old log: {log_file_path}")
-        except Exception as e:
-            logger.warning(f"Failed to cleanup old logs: {e}")
+    # Main run logic
+    data = doh.config.load()
+    directories = data.get('directories', {})
     
-    def monitor_cycle() -> tuple[int, int]:
-        """Run one monitoring cycle, return (processed, committed)"""
-        data = doh.config.load()
-        directories = data.get('directories', {})
-        
-        if not directories:
-            logger.warning("No directories to monitor. Run 'doh add' to add directories.")
-            if verbose:
-                click.echo(f"{Colors.YELLOW}No directories being monitored{Colors.RESET}")
-            return 0, 0
-        
-        processed = 0
-        committed = 0
-        
-        for dir_path, info in directories.items():
-            directory = Path(dir_path)
-            threshold = info.get('threshold', DEFAULT_THRESHOLD)
-            name = info.get('name', directory.name)
-            
-            processed += 1
-            
-            if not directory.exists():
-                logger.warning(f"Directory not found: {name} ({directory})")
-                continue
-            
-            stats = GitStats.get_stats(directory)
-            if stats is None:
-                logger.warning(f"Not a git repository: {name} ({directory})")
-                continue
-            
-            total_changes = stats['total_changes'] + stats.get('untracked_lines', stats['untracked'])
-            
-            if total_changes >= threshold:
-                if should_log_threshold_status(directory, total_changes, threshold):
-                    logger.info(f"'{name}': {total_changes} changes >= {threshold} threshold - STATUS: OVER - {directory}")
-                if auto_commit_directory(directory, stats, threshold, name):
-                    committed += 1
-            else:
-                # Only log if we haven't logged this status recently
-                if should_log_threshold_status(directory, total_changes, threshold):
-                    logger.debug(f"'{name}': {total_changes} changes < {threshold} threshold - STATUS: BELOW - {directory}")
-                elif verbose:
-                    # Still show in verbose output but don't log to file
-                    click.echo(f"{Colors.YELLOW}'{name}': {total_changes} changes (under threshold {threshold}){Colors.RESET}")
-        
-        return processed, committed
-    
-    # Main daemon logic
-    cycle_count = 0
-    
-    logger.info(f"Starting DOH daemon (PID: {os.getpid()})")
-    logger.info(f"Run mode: {'single run' if once else 'continuous'}")
-    logger.info(f"Check interval: {interval} seconds")
-    logger.info(f"Verbose: {verbose}")
+    if not directories:
+        click.echo(f"{Colors.YELLOW}No directories being monitored. Use 'doh add' to add directories.{Colors.RESET}")
+        return
     
     if verbose:
-        click.echo(f"{Colors.BLUE}DOH Daemon starting...{Colors.RESET}")
-        click.echo(f"Mode: {'Single run' if once else 'Continuous'}")
-        click.echo(f"Interval: {interval} seconds")
-        click.echo()
+        click.echo(f"{Colors.BLUE}Checking {len(directories)} monitored directories...{Colors.RESET}")
     
-    try:
-        while True:
-            cycle_count += 1
-            
-            # Clean up old logs every 10 cycles
-            if cycle_count % 10 == 1:
-                cleanup_old_logs()
-            
+    committed = 0
+    
+    for dir_path, info in directories.items():
+        directory = Path(dir_path)
+        threshold = info.get('threshold', DEFAULT_THRESHOLD)
+        name = info.get('name', directory.name)
+        
+        if not directory.exists():
             if verbose:
-                click.echo(f"{Colors.BLUE}Starting monitoring cycle #{cycle_count}...{Colors.RESET}")
-            
-            processed, committed = monitor_cycle()
-            
-            if verbose or committed > 0:
-                status_color = Colors.GREEN if committed > 0 else Colors.YELLOW
-                click.echo(f"{status_color}Cycle #{cycle_count}: {committed}/{processed} directories auto-committed{Colors.RESET}")
-            
-            logger.info(f"Monitoring cycle #{cycle_count} complete: {committed}/{processed} directories auto-committed")
-            
-            # Exit if running once (cron mode)
-            if once:
-                logger.info("Single run complete")
-                if verbose:
-                    click.echo(f"{Colors.GREEN}Single run complete{Colors.RESET}")
-                break
-            
-            # Wait for next cycle
+                click.echo(f"{Colors.RED}✗ Directory not found: {name} ({directory}){Colors.RESET}")
+            continue
+        
+        stats = GitStats.get_stats(directory)
+        if stats is None:
             if verbose:
-                click.echo(f"Waiting {interval} seconds until next check...")
-                click.echo()
-            
-            time.sleep(interval)
-            
-    except KeyboardInterrupt:
-        logger.info("Daemon stopped by user")
-        if verbose:
-            click.echo(f"\n{Colors.YELLOW}Daemon stopped by user{Colors.RESET}")
-    except Exception as e:
-        logger.error(f"Daemon error: {e}")
-        if verbose:
-            click.echo(f"{Colors.RED}Daemon error: {e}{Colors.RESET}")
-        raise
+                click.echo(f"{Colors.RED}✗ Not a git repository: {name} ({directory}){Colors.RESET}")
+            continue
+        
+        total_changes = stats['total_changes'] + stats.get('untracked_lines', stats['untracked'])
+        
+        if total_changes >= threshold:
+            if auto_commit_directory(directory, stats, threshold, name):
+                committed += 1
+        elif verbose:
+            click.echo(f"{Colors.GREEN}• {name}: {total_changes} changes (under threshold {threshold}){Colors.RESET}")
+    
+    if committed > 0:
+        click.echo(f"\n{Colors.GREEN}✓ Auto-committed {committed} directories{Colors.RESET}")
+    elif verbose:
+        click.echo(f"\n{Colors.GREEN}All directories are clean or under threshold{Colors.RESET}")
+    else:
+        click.echo("No directories needed auto-commit")
 
 
 @main.command('squash', short_help='Squash auto-commits')
