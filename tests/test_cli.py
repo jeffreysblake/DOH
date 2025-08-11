@@ -64,11 +64,17 @@ class TestDohCLI:
         assert "Monitored directories: 0" in result.output
     
     def test_config_command_set_threshold(self):
-        """Test config command can set values"""
-        result = self.runner.invoke(config, ['--threshold', '100'])
+        """Test config command can set values with --set flag"""
+        result = self.runner.invoke(config, ['--set', '--threshold', '100'])
         assert result.exit_code == 0
         assert "Default threshold set to: 100" in result.output
         assert "Configuration saved successfully" in result.output
+    
+    def test_config_command_requires_set_flag(self):
+        """Test config command requires --set flag to modify values"""
+        result = self.runner.invoke(config, ['--threshold', '100'])
+        assert result.exit_code == 0
+        assert "To set configuration values, use the --set flag" in result.output
     
     def test_add_command(self):
         """Test add command adds directory to monitoring"""
@@ -114,19 +120,53 @@ class TestDohCLI:
         assert result.exit_code == 0
         assert "TestRepo" in result.output
     
-    def test_status_command(self):
-        """Test status command shows directory status"""
+    def test_status_command_local(self):
+        """Test status command shows local directory status (default)"""
         repo_dir = self.test_dir / "test_repo"
         self.create_git_repo(repo_dir, with_changes=True)
         
         # Add to monitoring
         self.runner.invoke(add, [str(repo_dir), '--threshold', '1'])
         
-        # Check status
-        result = self.runner.invoke(status)
+        # Change to repo directory and check local status
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(repo_dir)
+            result = self.runner.invoke(status)
+            assert result.exit_code == 0
+            assert "DOH Local Status:" in result.output
+            assert "Change Details:" in result.output
+        finally:
+            os.chdir(old_cwd)
+    
+    def test_status_command_global(self):
+        """Test status command shows global status with --global flag"""
+        repo_dir = self.test_dir / "test_repo"
+        self.create_git_repo(repo_dir, with_changes=True)
+        
+        # Add to monitoring
+        self.runner.invoke(add, [str(repo_dir), '--threshold', '1'])
+        
+        # Check global status
+        result = self.runner.invoke(status, ['--global'])
         assert result.exit_code == 0
-        assert "DOH Status Summary:" in result.output
+        assert "DOH Global Status Summary:" in result.output
         assert "Total directories: 1" in result.output
+    
+    def test_status_command_unmonitored_directory(self):
+        """Test status command in unmonitored directory"""
+        repo_dir = self.test_dir / "unmonitored_repo"
+        self.create_git_repo(repo_dir)
+        
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(repo_dir)
+            result = self.runner.invoke(status)
+            assert result.exit_code == 0
+            assert "Current directory is not being monitored" in result.output
+            assert "Use 'doh add' to add it to monitoring" in result.output
+        finally:
+            os.chdir(old_cwd)
     
     def test_run_command(self):
         """Test run command processes directories"""
@@ -204,8 +244,8 @@ class TestDohCLI:
         assert result.exit_code == 0
         assert "Successfully squashed" in result.output
     
-    def test_cleanup_command(self):
-        """Test cleanup command"""
+    def test_cleanup_command_with_confirmation(self):
+        """Test cleanup command asks for confirmation"""
         repo_dir = self.test_dir / "test_repo"
         self.create_git_repo(repo_dir)
         
@@ -213,7 +253,22 @@ class TestDohCLI:
         subprocess.run(['git', 'checkout', '-b', 'doh-auto-commits-test'], cwd=repo_dir, check=True)
         subprocess.run(['git', 'checkout', 'master'], cwd=repo_dir, check=True)
         
-        result = self.runner.invoke(cleanup, [str(repo_dir)])
+        # Test with 'n' response
+        result = self.runner.invoke(cleanup, [str(repo_dir)], input='n\n')
+        assert result.exit_code == 0
+        assert "Clean up temporary branches" in result.output
+        assert "Cleanup cancelled" in result.output
+    
+    def test_cleanup_command_with_force(self):
+        """Test cleanup command with --force flag skips confirmation"""
+        repo_dir = self.test_dir / "test_repo"
+        self.create_git_repo(repo_dir)
+        
+        # Create a temp branch
+        subprocess.run(['git', 'checkout', '-b', 'doh-auto-commits-test'], cwd=repo_dir, check=True)
+        subprocess.run(['git', 'checkout', 'master'], cwd=repo_dir, check=True)
+        
+        result = self.runner.invoke(cleanup, ['--force', str(repo_dir)])
         assert result.exit_code == 0
         assert "temporary branches" in result.output
     

@@ -53,6 +53,7 @@ Documentation = "https://github.com/yourusername/doh/wiki"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["doh*"]
 
 [tool.setuptools.package-data]
 doh = ["py.typed"]
