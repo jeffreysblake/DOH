@@ -4,7 +4,9 @@ Test suite for DOH Colors module
 """
 
 import sys
+import pytest
 from unittest.mock import patch
+from doh.colors import Colors
 
 
 class TestColors:

@@ -4,11 +4,12 @@ Additional CLI tests for edge cases and error handling
 """
 
 import os
+import pytest
 import subprocess
 import tempfile
 from pathlib import Path
 from click.testing import CliRunner
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Import CLI commands
 from doh.cli import main, config, add, status, list, run, squash, cleanup
@@ -64,11 +65,11 @@ class TestCliEdgeCases:
     def test_config_with_invalid_values(self):
         """Test config command with various threshold values"""
         # Test negative threshold (CLI accepts it, even if not ideal)
-        # result = self.runner.invoke(config, ["--set", "--threshold", "-10"])
+        result = self.runner.invoke(config, ["--set", "--threshold", "-10"])
         assert result.exit_code == 0  # CLI doesn't validate, so it succeeds
 
         # Test zero threshold (CLI accepts it)
-        # result = self.runner.invoke(config, ["--set", "--threshold", "0"])
+        result = self.runner.invoke(config, ["--set", "--threshold", "0"])
         assert result.exit_code == 0
 
     def test_add_non_git_directory(self):
@@ -76,7 +77,7 @@ class TestCliEdgeCases:
         non_git_dir = self.test_dir / "not_git"
         non_git_dir.mkdir()
 
-        # result = self.runner.invoke(add, [str(non_git_dir), "--name", "NotGit"])
+        result = self.runner.invoke(add, [str(non_git_dir), "--name", "NotGit"])
         # Should handle gracefully
         assert result.exit_code == 0
 
@@ -86,7 +87,7 @@ class TestCliEdgeCases:
         self.create_git_repo(repo_dir)
 
         # Test with negative threshold (CLI accepts it)
-        # result = self.runner.invoke(add, [str(repo_dir), "--threshold", "-5"])
+        result = self.runner.invoke(add, [str(repo_dir), "--threshold", "-5"])
         assert result.exit_code == 0  # CLI doesn't validate thresholds
 
     def test_status_with_permission_error(self):
@@ -101,7 +102,7 @@ class TestCliEdgeCases:
         with patch("subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.CalledProcessError(1, "git")
 
-            # result = self.runner.invoke(status, ["--global"])
+            result = self.runner.invoke(status, ["--global"])
             assert result.exit_code == 0  # Should handle errors gracefully
 
     def test_run_with_git_errors(self):
@@ -116,7 +117,7 @@ class TestCliEdgeCases:
         with patch("doh.git_stats.GitStats.auto_commit") as mock_commit:
             mock_commit.side_effect = Exception("Git error")
 
-            # result = self.runner.invoke(run)
+            result = self.runner.invoke(run)
             assert result.exit_code == 0  # Should handle errors gracefully
 
     def test_squash_without_temp_branches(self):
@@ -124,7 +125,7 @@ class TestCliEdgeCases:
         repo_dir = self.test_dir / "no_temp_repo"
         self.create_git_repo(repo_dir)
 
-        # result = self.runner.invoke(squash, ["Test message", str(repo_dir)])
+        result = self.runner.invoke(squash, ["Test message", str(repo_dir)])
         # Should handle gracefully when no temp branches exist
         assert result.exit_code == 0
 
@@ -133,7 +134,7 @@ class TestCliEdgeCases:
         repo_dir = self.test_dir / "clean_repo"
         self.create_git_repo(repo_dir)
 
-        # result = self.runner.invoke(cleanup, [str(repo_dir)])
+        result = self.runner.invoke(cleanup, [str(repo_dir)])
         # Should handle gracefully when no branches to clean
         assert result.exit_code == 0
 
@@ -145,7 +146,7 @@ class TestCliEdgeCases:
         old_cwd = os.getcwd()
         try:
             os.chdir(non_git_dir)
-            # result = self.runner.invoke(main, ["--force"])
+            result = self.runner.invoke(main, ["--force"])
             assert result.exit_code == 0
         finally:
             os.chdir(old_cwd)
@@ -153,11 +154,11 @@ class TestCliEdgeCases:
     def test_ex_commands_with_invalid_paths(self):
         """Test exclusion commands with invalid paths"""
         # Test adding non-existent path to exclusions
-        # result = self.runner.invoke(main, ["ex", "add", "/nonexistent/path"])
+        result = self.runner.invoke(main, ["ex", "add", "/nonexistent/path"])
         assert result.exit_code == 0  # Should still work
 
         # Test removing non-excluded path
-        # result = self.runner.invoke(main, ["ex", "remove", "/not/excluded"])
+        result = self.runner.invoke(main, ["ex", "remove", "/not/excluded"])
         assert result.exit_code == 0
 
     def test_show_single_directory_status_errors(self):
@@ -166,7 +167,7 @@ class TestCliEdgeCases:
         # # fake_dir = Path("/tmp/nonexistent_test_dir")  # Not currently used
 
         # This tests the internal function through the status command
-        # result = self.runner.invoke(status)
+        result = self.runner.invoke(status)
         assert result.exit_code == 0
 
     def test_colors_in_output(self):
@@ -178,11 +179,11 @@ class TestCliEdgeCases:
         self.runner.invoke(add, [str(repo_dir), "--threshold", "1"])
 
         # Check that colors are used in various commands
-        # result = self.runner.invoke(list)
+        result = self.runner.invoke(list)
         assert result.exit_code == 0
         # Output should contain the actual command output
 
-        # result = self.runner.invoke(status, ["--global"])
+        result = self.runner.invoke(status, ["--global"])
         assert result.exit_code == 0
 
     def test_config_git_profile_invalid_path(self):
@@ -203,7 +204,7 @@ class TestCliEdgeCases:
 
         # Run multiple times to simulate daemon behavior
         for _ in range(3):
-            # result = self.runner.invoke(run, ["--verbose"])
+            result = self.runner.invoke(run, ["--verbose"])
             assert result.exit_code == 0
 
 

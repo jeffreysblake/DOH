@@ -3,10 +3,11 @@
 Additional test suite for DOH GitStats module edge cases
 """
 
+import pytest
 import subprocess
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from doh.git_stats import GitStats
 

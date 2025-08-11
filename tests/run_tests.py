@@ -19,7 +19,7 @@ def main():
 
     # Check if pytest is available
     try:
-        import pytest
+        import pytest  # noqa: F401  # Just checking if available
     except ImportError:
         print("❌ pytest not found. Installing...")
         subprocess.run([sys.executable, "-m", "pip", "install", "pytest"], check=True)

@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 # Import our DOH classes
-from doh import DohCore, DohConfig, GitStats
+from doh import DohCore, GitStats
 
 
 class TestDohSystem:

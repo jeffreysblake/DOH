@@ -3,10 +3,12 @@
 Additional test suite for DOH Core module edge cases
 """
 
+import os
+import pytest
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from doh.core import DohCore
 
@@ -56,14 +58,14 @@ class TestCoreEdgeCases:
         doh = DohCore()
 
         # Test with non-existent directory
-        # fake_dir = self.test_dir / "nonexistent"
-        # result = doh.add_directory(fake_dir, threshold=50, name="test")
+        fake_dir = self.test_dir / "nonexistent"
+        result = doh.add_directory(fake_dir, threshold=50, name="test")
         assert result is False
 
         # Test with file instead of directory
         test_file = self.test_dir / "test_file"
         test_file.write_text("content")
-        # result = doh.add_directory(test_file, threshold=50, name="test")
+        result = doh.add_directory(test_file, threshold=50, name="test")
         assert result is False
 
     def test_exclusion_edge_cases(self):
@@ -71,13 +73,13 @@ class TestCoreEdgeCases:
         doh = DohCore()
 
         # Test excluding non-existent directory
-        # fake_dir = self.test_dir / "nonexistent"
-        # result = doh.add_exclusion(fake_dir)
+        fake_dir = self.test_dir / "nonexistent"
+        result = doh.add_exclusion(fake_dir)
         assert result is True  # Should still add to exclusions
 
         # Test with relative paths
         relative_dir = Path("../relative/path")
-        # result = doh.add_exclusion(relative_dir)
+        result = doh.add_exclusion(relative_dir)
         assert result is True
 
     def test_remove_directory_edge_cases(self):
@@ -88,11 +90,11 @@ class TestCoreEdgeCases:
         test_dir = self.test_dir / "not_monitored"
         test_dir.mkdir()
 
-        # result = doh.remove_directory(test_dir)
+        result = doh.remove_directory(test_dir)
         assert result is False
 
         # Test removing with relative path
-        # result = doh.remove_directory(Path("../nonexistent"))
+        result = doh.remove_directory(Path("../nonexistent"))
         assert result is False
 
     def test_remove_exclusion_edge_cases(self):
@@ -103,7 +105,7 @@ class TestCoreEdgeCases:
         test_dir = self.test_dir / "not_excluded"
         test_dir.mkdir()
 
-        # result = doh.remove_exclusion(test_dir)
+        result = doh.remove_exclusion(test_dir)
         assert result is False
 
     def test_is_excluded_with_nested_paths(self):
@@ -139,7 +141,7 @@ class TestCoreEdgeCases:
 
             # This might still fail, but should attempt the operation
             try:
-                # # result = doh.add_directory(test_dir, threshold=50, name="test")
+                # result = doh.add_directory(test_dir, threshold=50, name="test")
                 doh.add_directory(test_dir, threshold=50, name="test")
             except Exception:
                 pass  # Expected due to mocked failure

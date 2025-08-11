@@ -3,10 +3,12 @@
 Additional test suite for DOH Config module edge cases
 """
 
+import json
+import pytest
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestConfigEdgeCases:
@@ -59,7 +61,7 @@ class TestConfigEdgeCases:
             config.config_file = config_file
 
             # Should return default config when file is corrupted
-            # result = config.load()
+            result = config.load()
             assert "directories" in result
             assert "exclusions" in result
             assert "global_settings" in result
@@ -105,7 +107,7 @@ class TestConfigEdgeCases:
             config.config_file = config_file
 
             # Should fill in missing sections
-            # result = config.load()
+            result = config.load()
             assert "directories" in result
             assert "exclusions" in result
             assert "global_settings" in result
@@ -151,7 +153,7 @@ class TestConfigEdgeCases:
         test_config["global_settings"]["git_profile"] = "/nonexistent/path"
 
         # Should handle invalid git profile gracefully
-        # result = config.load()
+        result = config.load()
         assert result is not None
 
 

@@ -4,6 +4,7 @@ Test suite for DOH CLI commands
 """
 
 import os
+import pytest
 import shutil
 import subprocess
 import tempfile
@@ -61,7 +62,7 @@ class TestDohCLI:
 
     def test_config_command_display(self):
         """Test config command shows configuration"""
-        # result = self.runner.invoke(config)
+        result = self.runner.invoke(config)
         assert result.exit_code == 0
         assert "DOH Configuration:" in result.output
         assert "Config file:" in result.output
@@ -70,16 +71,16 @@ class TestDohCLI:
 
     def test_config_command_set_threshold(self):
         """Test config command can set values with --set flag"""
-        # result = self.runner.invoke(config, ["--set", "--threshold", "100"])
+        result = self.runner.invoke(config, ["--set", "--threshold", "100"])
         assert result.exit_code == 0
         assert "Default threshold set to: 100" in result.output
         assert "Configuration saved successfully" in result.output
 
     def test_config_command_requires_set_flag(self):
         """Test config command requires --set flag to modify values"""
-        # result = self.runner.invoke(config, ["--threshold", "100"])
+        result = self.runner.invoke(config, ["--threshold", "100"])
         assert result.exit_code == 0
-        assert "To modify configuration, use --set flag" in result.output
+        assert "requires --set flag" in result.output
 
     def test_add_command(self):
         """Test add command adds directory to monitoring"""
@@ -101,7 +102,7 @@ class TestDohCLI:
         old_cwd = os.getcwd()
         try:
             os.chdir(repo_dir)
-        # result = self.runner.invoke(add)
+            result = self.runner.invoke(add)
             assert result.exit_code == 0
             assert "to monitoring" in result.output
         finally:
@@ -109,7 +110,7 @@ class TestDohCLI:
 
     def test_list_command_empty(self):
         """Test list command with no monitored directories"""
-        # result = self.runner.invoke(list)
+        result = self.runner.invoke(list)
         assert result.exit_code == 0
         # In a real environment, there may be existing directories
         assert "Monitored Directories:" in result.output
@@ -124,7 +125,7 @@ class TestDohCLI:
         self.runner.invoke(add, [str(repo_dir), "--name", "TestRepo"])
 
         # List should show it
-        # result = self.runner.invoke(list)
+        result = self.runner.invoke(list)
         assert result.exit_code == 0
         assert "TestRepo" in result.output
 
@@ -140,7 +141,7 @@ class TestDohCLI:
         old_cwd = os.getcwd()
         try:
             os.chdir(repo_dir)
-        # result = self.runner.invoke(status)
+            result = self.runner.invoke(status)
             assert result.exit_code == 0
             # Should show the local directory status
             assert (
@@ -160,7 +161,7 @@ class TestDohCLI:
         self.runner.invoke(add, [str(repo_dir), "--threshold", "1"])
 
         # Check global status
-        # result = self.runner.invoke(status, ["--global"])
+        result = self.runner.invoke(status, ["--global"])
         assert result.exit_code == 0
         assert "DOH Global Status Summary:" in result.output
         # Don't assert specific count since there may be existing monitored directories
@@ -174,7 +175,7 @@ class TestDohCLI:
         old_cwd = os.getcwd()
         try:
             os.chdir(repo_dir)
-        # result = self.runner.invoke(status)
+            result = self.runner.invoke(status)
             assert result.exit_code == 0
             assert "Current directory is not being monitored" in result.output
             assert "Use 'doh add' to add it to monitoring" in result.output
@@ -190,7 +191,7 @@ class TestDohCLI:
         self.runner.invoke(add, [str(repo_dir), "--threshold", "1"])
 
         # Run should auto-commit
-        # result = self.runner.invoke(run, ["--verbose"])
+        result = self.runner.invoke(run, ["--verbose"])
         assert result.exit_code == 0
         # Don't assert specific count since there may be existing monitored directories
         assert "Checking" in result.output and "monitored directories" in result.output
@@ -201,17 +202,17 @@ class TestDohCLI:
         excluded_dir.mkdir()
 
         # Test add exclusion
-        # result = self.runner.invoke(main, ["ex", "add", str(excluded_dir)])
+        result = self.runner.invoke(main, ["ex", "add", str(excluded_dir)])
         assert result.exit_code == 0
         assert "Added" in result.output and "to exclusions" in result.output
 
         # Test list exclusions
-        # result = self.runner.invoke(main, ["ex", "list"])
+        result = self.runner.invoke(main, ["ex", "list"])
         assert result.exit_code == 0
         assert "Excluded Directories:" in result.output
 
         # Test remove exclusion
-        # result = self.runner.invoke(main, ["ex", "rm", str(excluded_dir)])
+        result = self.runner.invoke(main, ["ex", "rm", str(excluded_dir)])
         assert result.exit_code == 0
         assert "Removed" in result.output and "from exclusions" in result.output
 
@@ -224,7 +225,7 @@ class TestDohCLI:
         self.runner.invoke(add, [str(repo_dir)])
 
         # Remove from monitoring
-        # result = self.runner.invoke(main, ["rm", str(repo_dir)])
+        result = self.runner.invoke(main, ["rm", str(repo_dir)])
         assert result.exit_code == 0
         assert "Removed" in result.output and "from monitoring" in result.output
 
@@ -241,7 +242,7 @@ class TestDohCLI:
         subprocess.run(["git", "commit", "-m", "Auto commit"], cwd=repo_dir, check=True)
 
         # Test squash
-        # result = self.runner.invoke(squash, ["Squashed changes", str(repo_dir)])
+        result = self.runner.invoke(squash, ["Squashed changes", str(repo_dir)])
         assert result.exit_code == 0
         assert "Successfully squashed" in result.output
 
@@ -258,9 +259,9 @@ class TestDohCLI:
         subprocess.run(["git", "commit", "-m", "Auto commit"], cwd=repo_dir, check=True)
 
         # Test shorthand 's' command
-        # result = self.runner.invoke(
-        #     main, ["s", "Squashed with shorthand", str(repo_dir)]
-        # )
+        result = self.runner.invoke(
+            main, ["s", "Squashed with shorthand", str(repo_dir)]
+        )
         assert result.exit_code == 0
         assert "Successfully squashed" in result.output
 
@@ -276,7 +277,7 @@ class TestDohCLI:
         subprocess.run(["git", "checkout", "master"], cwd=repo_dir, check=True)
 
         # Test with 'n' response
-        # result = self.runner.invoke(cleanup, [str(repo_dir)], input="n\n")
+        result = self.runner.invoke(cleanup, [str(repo_dir)], input="n\n")
         assert result.exit_code == 0
         assert "Found" in result.output and "temporary branches" in result.output
         assert "Cleanup cancelled" in result.output
@@ -292,13 +293,13 @@ class TestDohCLI:
         )
         subprocess.run(["git", "checkout", "master"], cwd=repo_dir, check=True)
 
-        # result = self.runner.invoke(cleanup, ["--force", str(repo_dir)])
+        result = self.runner.invoke(cleanup, ["--force", str(repo_dir)])
         assert result.exit_code == 0
         assert "temporary branches" in result.output
 
     def test_help_commands(self):
         """Test that help commands work"""
-        # result = self.runner.invoke(main, ["--help"])
+        result = self.runner.invoke(main, ["--help"])
         assert result.exit_code == 0
         assert "DOH - Directory Oh-no, Handle this!" in result.output
         assert "Commands:" in result.output
