@@ -8,7 +8,7 @@ __author__ = "DOH Project"
 __email__ = "doh@example.com"
 
 from .core import DohCore
-from .config import DohConfig  
+from .config import DohConfig
 from .git_stats import GitStats
 
 __all__ = ["DohCore", "DohConfig", "GitStats"]

@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""
+Pre-commit hook script to ensure code quality
+"""
+
+import subprocess
+import sys
+from pathlib import Path
+
+
+def run_command(cmd, description):
+    """Run a command and handle errors"""
+    print(f"Running {description}...")
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"❌ {description} failed:")
+            print(result.stdout)
+            print(result.stderr)
+            return False
+        else:
+            print(f"✅ {description} passed")
+            if result.stdout.strip():
+                print(result.stdout)
+            return True
+    except Exception as e:
+        print(f"❌ Error running {description}: {e}")
+        return False
+
+
+def main():
+    """Main pre-commit function"""
+    success = True
+    
+    # Get list of changed Python files
+    changed_files = subprocess.run(
+        "git diff --cached --name-only --diff-filter=ACM | grep -E '\\.py$' || true",
+        shell=True,
+        capture_output=True,
+        text=True
+    )
+    
+    if not changed_files.stdout.strip():
+        print("No Python files changed, skipping checks")
+        return True
+    
+    files = changed_files.stdout.strip().split('\n')
+    files_str = ' '.join(files)
+    
+    print(f"Checking {len(files)} Python files...")
+    
+    # Run black formatting
+    if not run_command(f"black --check --line-length=88 {files_str}", "Black formatting check"):
+        print("🔧 Auto-fixing with black...")
+        run_command(f"black --line-length=88 {files_str}", "Black formatting")
+        print("✅ Files formatted. Please add them and commit again.")
+        success = False
+    
+    # Run flake8 linting
+    if not run_command(f"flake8 {files_str}", "Flake8 linting"):
+        success = False
+    
+    # Run tests for changed files
+    test_files = []
+    for file in files:
+        # Convert src file to test file
+        if file.startswith('src/'):
+            test_file = file.replace('src/', 'tests/test_').replace('.py', '.py')
+            if Path(test_file).exists():
+                test_files.append(test_file)
+        # Include test files that were changed
+        elif file.startswith('tests/'):
+            test_files.append(file)
+    
+    if test_files:
+        test_str = ' '.join(test_files)
+        if not run_command(f"python -m pytest {test_str} -v", "Tests for changed code"):
+            success = False
+    
+    if success:
+        print("🎉 All checks passed!")
+        return True
+    else:
+        print("❌ Some checks failed. Please fix and try again.")
+        return False
+
+
+if __name__ == "__main__":
+    sys.exit(0 if main() else 1)
