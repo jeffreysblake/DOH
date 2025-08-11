@@ -841,46 +841,13 @@ def daemon(once, verbose, interval):
         raise
 
 
-@main.group()
-def temp():
-    """Manage temporary auto-commit branches"""
-    pass
-
-
-@temp.command()
-@click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path), 
-                required=False)
-def branches(directory):
-    """Show status of temporary branches in a directory"""
-    if directory is None:
-        directory = Path.cwd()
-    
-    directory = directory.resolve()
-    
-    if not GitStats.is_git_repo(directory):
-        click.echo(f"{Colors.RED}Not a git repository: {directory}{Colors.RESET}")
-        return
-    
-    branches = GitStats.list_temp_branches(directory)
-    
-    if not branches:
-        click.echo(f"{Colors.YELLOW}No temporary branches found in {directory.name}{Colors.RESET}")
-        return
-    
-    click.echo(f"{Colors.BLUE}Temporary branches in {directory.name}:{Colors.RESET}")
-    for branch in branches:
-        click.echo(f"  {Colors.GREEN}{branch['name']}{Colors.RESET}")
-        click.echo(f"    Commits: {branch['commit_count']}")
-        click.echo(f"    Last commit: {branch['last_commit']}")
-
-
-@temp.command()
+@main.command()
 @click.argument('commit_message')
-@click.option('--target', '-t', default='main', help='Target branch to merge into (default: main)')
+@click.option('--target', '-t', default='master', help='Target branch to squash into (default: master)')
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path), 
                 required=False)
 def squash(commit_message, target, directory):
-    """Squash temporary branch commits into target branch with proper commit message"""
+    """Squash temporary auto-commits into a single commit with proper message"""
     if directory is None:
         directory = Path.cwd()
     
@@ -890,42 +857,45 @@ def squash(commit_message, target, directory):
         click.echo(f"{Colors.RED}Not a git repository: {directory}{Colors.RESET}")
         return
     
-    # Check if we're on a temp branch
+    # Check if there are temp branches to squash
+    temp_branches = GitStats.list_temp_branches(directory)
+    if not temp_branches:
+        click.echo(f"{Colors.YELLOW}No temporary branches found to squash{Colors.RESET}")
+        return
+    
+    # Find current branch or most recent temp branch
     try:
-        result = subprocess.run(
+        current_branch = subprocess.run(
             ['git', '-C', str(directory), 'branch', '--show-current'],
             capture_output=True, text=True, check=True
-        )
-        current_branch = result.stdout.strip()
+        ).stdout.strip()
         
-        if not current_branch.startswith('doh-auto-commits'):
-            click.echo(f"{Colors.RED}Not currently on a temporary branch. Current branch: {current_branch}{Colors.RESET}")
-            
-            # Show available temp branches
-            branches = GitStats.list_temp_branches(directory)
-            if branches:
-                click.echo(f"\nAvailable temporary branches:")
-                for branch in branches:
-                    click.echo(f"  {branch['name']} ({branch['commit_count']} commits)")
-                click.echo(f"\nUse 'git checkout <branch-name>' to switch to a temp branch first.")
-            
+        temp_branch = None
+        if current_branch.startswith('doh-auto-commits'):
+            temp_branch = current_branch
+        elif temp_branches:
+            # Use most recent temp branch
+            temp_branch = sorted(temp_branches, key=lambda b: b['name'])[-1]['name']
+        
+        if not temp_branch:
+            click.echo(f"{Colors.YELLOW}No temporary branch to squash{Colors.RESET}")
             return
         
-        # Perform squash merge
-        if GitStats.squash_temp_commits(directory, target, commit_message, current_branch):
-            click.echo(f"{Colors.GREEN}✓ Successfully squashed {current_branch} into {target}{Colors.RESET}")
-            click.echo(f"Commit message: {commit_message}")
+        if GitStats.squash_temp_commits(directory, target, commit_message, temp_branch):
+            click.echo(f"{Colors.GREEN}✓ Successfully squashed temp commits into '{target}'{Colors.RESET}")
+            click.echo(f"  Commit message: {commit_message}")
         else:
             click.echo(f"{Colors.RED}✗ Failed to squash temporary branch{Colors.RESET}")
             
     except subprocess.CalledProcessError as e:
-        click.echo(f"{Colors.RED}Error: {e}{Colors.RESET}")
+        click.echo(f"{Colors.RED}Git error: {e}{Colors.RESET}")
 
 
-@temp.command()
+@main.command()
+@click.option('--cleanup-days', '-d', default=7, type=int, help='Remove temp branches older than N days')
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path), 
                 required=False)
-def cleanup(directory):
+def cleanup(cleanup_days, directory):
     """Clean up old temporary branches"""
     if directory is None:
         directory = Path.cwd()
@@ -936,19 +906,21 @@ def cleanup(directory):
         click.echo(f"{Colors.RED}Not a git repository: {directory}{Colors.RESET}")
         return
     
-    # Get configuration
-    data = doh.config.load()
-    max_age_days = data.get('global_settings', {}).get('max_temp_branch_age_days', 7)
-    
     branches = GitStats.list_temp_branches(directory)
     
     if not branches:
         click.echo(f"{Colors.YELLOW}No temporary branches to clean up{Colors.RESET}")
         return
     
-    # TODO: Implement age-based cleanup
     click.echo(f"{Colors.BLUE}Found {len(branches)} temporary branches{Colors.RESET}")
-    click.echo(f"Cleanup logic for branches older than {max_age_days} days - Coming soon!")
+    for branch in branches:
+        click.echo(f"  {Colors.GREEN}{branch['name']}{Colors.RESET} ({branch['commit_count']} commits, {branch['last_commit']})")
+    
+    # TODO: Implement age-based cleanup
+    click.echo(f"Cleanup logic for branches older than {cleanup_days} days - Coming soon!")
+
+
+# Hide the daemon command but keep it functional for systemd
 
 
 if __name__ == "__main__":
