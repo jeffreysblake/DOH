@@ -322,6 +322,7 @@ def status():
     over_threshold = []
     clean = []
     issues = []
+    temp_branches = []
     
     for dir_path, info in directories.items():
         directory = Path(dir_path)
@@ -337,6 +338,11 @@ def status():
             issues.append((name, dir_path, "Not a git repository"))
             continue
         
+        # Check for temp branches
+        temp_branch_list = GitStats.list_temp_branches(directory)
+        if temp_branch_list:
+            temp_branches.append((name, dir_path, temp_branch_list))
+        
         total_changes = stats['total_changes'] + stats['untracked']
         
         if total_changes >= threshold:
@@ -351,6 +357,8 @@ def status():
     click.echo(f"{Colors.RED}Over threshold: {len(over_threshold)}{Colors.RESET}")
     click.echo(f"{Colors.GREEN}Clean: {len(clean)}{Colors.RESET}")
     click.echo(f"{Colors.YELLOW}Issues: {len(issues)}{Colors.RESET}")
+    if temp_branches:
+        click.echo(f"{Colors.BLUE}With temp branches: {len(temp_branches)}{Colors.RESET}")
     click.echo()
     
     # Show over threshold
@@ -367,6 +375,18 @@ def status():
         for name, path, issue in issues:
             click.echo(f"  {Colors.YELLOW}{name}: {issue}{Colors.RESET}")
             click.echo(f"    {path}")
+        click.echo()
+    
+    # Show temp branches
+    if temp_branches:
+        click.echo(f"{Colors.BLUE}{Colors.BOLD}🔀 TEMP BRANCHES ({len(temp_branches)} directories):{Colors.RESET}")
+        for name, path, branches in temp_branches:
+            click.echo(f"  {Colors.BLUE}{name}:{Colors.RESET}")
+            for branch_info in branches[:3]:  # Show first 3 branches
+                click.echo(f"    {Colors.BLUE}• {branch_info['name']} ({branch_info['commit_count']} commits, {branch_info['last_commit']}){Colors.RESET}")
+            if len(branches) > 3:
+                click.echo(f"    {Colors.BLUE}... and {len(branches) - 3} more branches{Colors.RESET}")
+            click.echo(f"    {Colors.BLUE}💡 Run 'doh squash \"message\"' in {path} to merge{Colors.RESET}")
         click.echo()
     
     # Show clean (abbreviated)
@@ -841,7 +861,7 @@ def daemon(once, verbose, interval):
         raise
 
 
-@main.command()
+@main.command('squash', short_help='Squash auto-commits')
 @click.argument('commit_message')
 @click.option('--target', '-t', default='master', help='Target branch to squash into (default: master)')
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path), 
@@ -889,6 +909,18 @@ def squash(commit_message, target, directory):
             
     except subprocess.CalledProcessError as e:
         click.echo(f"{Colors.RED}Git error: {e}{Colors.RESET}")
+
+
+@main.command('s', hidden=True)
+@click.argument('commit_message')
+@click.option('--target', '-t', default='master', help='Target branch to squash into (default: master)')
+@click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path), 
+                required=False)
+@click.pass_context
+def s(ctx, commit_message, target, directory):
+    """Shorthand for squash command"""
+    # Use Click's invoke to call the squash command
+    ctx.invoke(squash, commit_message=commit_message, target=target, directory=directory)
 
 
 @main.command()
