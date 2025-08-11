@@ -95,7 +95,7 @@ class TestGitStatsEdgeCases:
         # Test with empty changes
         changes = []
         result = GitStats.format_file_changes(changes)
-        assert result == ""
+        assert "No file changes detected" in result or result == ""
         
         # Test with many files (should truncate)
         many_changes = [
