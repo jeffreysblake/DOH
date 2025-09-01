@@ -301,7 +301,7 @@ class TestDohCLI:
         """Test that help commands work"""
         result = self.runner.invoke(main, ["--help"])
         assert result.exit_code == 0
-        assert "DOH - Directory Oh-no, Handle this!" in result.output
+        assert "DOH - Delta-Oriented Historykeeper" in result.output
         assert "Commands:" in result.output
 
         # Test that new command names are visible

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test suite for DOH (Directory Oh-no, Handle this!)
+Test suite for DOH (Delta-Oriented Historykeeper)
 Comprehensive testing of all functionality
 """
 

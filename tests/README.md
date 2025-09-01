@@ -1,6 +1,6 @@
 # DOH Test Suite
 
-Comprehensive test suite for DOH (Directory Oh-no, Handle this!) - an auto-commit monitoring system for git repositories.
+Comprehensive test suite for DOH (Delta-Oriented Historykeeper) - an auto-commit monitoring system for git repositories.
 
 ## Overview
 

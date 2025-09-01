@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DOH - Directory Oh-no, Handle this!
+DOH - Delta-Oriented Historykeeper
 A smart auto-commit monitoring system for git repositories.
 
 This is a complete rewrite in Python for better performance, reliability,
@@ -61,7 +61,7 @@ doh = DohCore()
 )
 @click.pass_context
 def main(ctx, force, threshold, name):
-    """DOH - Directory Oh-no, Handle this!
+    """DOH - Delta-Oriented Historykeeper
 
     A smart auto-commit monitoring system for git repositories.
 
@@ -282,7 +282,7 @@ ex.add_command(exclusions_list, name="ls")  # Alias for list
 @click.option(
     "--temp-branch-cleanup-days",
     type=int,
-    help="Days after which to clean up old temp branches (default: 7)",
+    help="Days after which to clean up old temp branches (default: 365)",
 )
 def config(
     set,
@@ -365,7 +365,7 @@ def s(ctx, commit_message, target, directory):
 @click.option(
     "--cleanup-days",
     "-d",
-    default=7,
+    default=365,
     type=int,
     help="Remove temp branches older than N days",
 )

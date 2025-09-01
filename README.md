@@ -1,6 +1,6 @@
-# DOH - Directory Oh-no, Handle this! 🎯
+# DOH - Delta-Oriented Historykeeper
 
-**Automatic git commits for the chronically forgetful.** DOH monitors your repositories and creates commits when changes pile up, so you can focus on coding without constantly remembering to commit.
+**Automatic git commits for the chronically overwhelmed.** DOH monitors your repositories and creates commits when changes pile up, so you can focus on coding without constantly remembering to commit.
 
 ## Why Choose DOH?
 
@@ -10,7 +10,7 @@
 🚫 **Flexible Control** - Exclude directories you don't want monitored  
 ⚡ **Zero Friction** - Works silently in the background, no interruptions
 
-Perfect for ADHD developers and anyone who gets lost in flow state!
+Perfect for heavy context-switching developers or anyone who gets lost in a flow state!
 
 ## Quick Start
 

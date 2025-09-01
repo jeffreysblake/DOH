@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "doh-monitor"
 version = "2.0.0"
-description = "Directory Oh-no, Handle this! - Smart auto-commit monitoring system"
+description = "Delta-Oriented Historykeeper - Smart auto-commit monitoring system"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}

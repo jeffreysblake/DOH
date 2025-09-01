@@ -50,7 +50,7 @@ class DohConfig:
                 "use_temp_branches": True,
                 "temp_branch_prefix": "doh-auto-commits",
                 "auto_cleanup_temp_branches": True,
-                "max_temp_branch_age_days": 7,
+                "max_temp_branch_age_days": 365,
             },
             "directories": {},
             "exclusions": [],

@@ -117,7 +117,7 @@ def show_config_display(doh_core: Any) -> None:
     click.echo(f"Use temp branches: {settings.get('use_temp_branches', True)}")
     temp_prefix = settings.get('temp_branch_prefix', 'doh-auto-commits')
     click.echo(f"Temp branch prefix: {temp_prefix}")
-    temp_cleanup_days = settings.get('max_temp_branch_age_days', 7)
+    temp_cleanup_days = settings.get('max_temp_branch_age_days', 365)
     click.echo(f"Temp branch cleanup days: {temp_cleanup_days}")
 
     if doh_core.config.config_file.exists():

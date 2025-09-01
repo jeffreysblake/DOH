@@ -1,4 +1,4 @@
-# DOH - Directory Oh-no, Handle this!
+# DOH - Delta-Oriented Historykeeper
 # Auto-commit monitoring system
 
 # Core dependencies
